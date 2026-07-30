@@ -684,8 +684,41 @@ class WPForo_E2E_Tester {
 	}
 
 	private function test_semantic_search( $params ) {
+		global $wpdb;
+
 		$query = sanitize_text_field( $params['query'] ?? 'test search query' );
 		$limit = intval( $params['limit'] ?? 5 );
+		$board_id = WPF()->board->get_current( 'boardid' );
+
+		// Diagnostic info
+		$storage_mode = 'local';
+		if ( isset( WPF()->vector_storage ) ) {
+			$storage_mode = WPF()->vector_storage->get_storage_mode( $board_id );
+		}
+
+		// Check if we have embeddings at all
+		$embedding_count = 0;
+		if ( isset( WPF()->tables->ai_embeddings ) ) {
+			$embedding_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . WPF()->tables->ai_embeddings );
+		}
+
+		// Check if query words exist in any indexed content
+		$query_words = array_filter( explode( ' ', strtolower( $query ) ), fn($w) => strlen($w) > 2 );
+		$matching_topics = [];
+		if ( ! empty( $query_words ) && isset( WPF()->tables->ai_embeddings ) ) {
+			$like_clauses = [];
+			foreach ( $query_words as $word ) {
+				$like_clauses[] = $wpdb->prepare( "t.title LIKE %s", '%' . $wpdb->esc_like( $word ) . '%' );
+			}
+			$matching_topics = $wpdb->get_results(
+				"SELECT DISTINCT t.topicid, t.title
+				 FROM {$wpdb->prefix}wpforo_topics t
+				 INNER JOIN " . WPF()->tables->ai_embeddings . " e ON t.topicid = e.topicid
+				 WHERE (" . implode( ' OR ', $like_clauses ) . ")
+				 LIMIT 5",
+				ARRAY_A
+			);
+		}
 
 		$raw_results = WPF()->ai_client->semantic_search( $query, $limit );
 
@@ -693,6 +726,11 @@ class WPForo_E2E_Tester {
 			return [
 				'success' => false,
 				'error'   => $raw_results->get_error_message(),
+				'diagnostics' => [
+					'storage_mode'    => $storage_mode,
+					'embedding_count' => $embedding_count,
+					'matching_topics' => $matching_topics,
+				],
 			];
 		}
 
@@ -711,11 +749,10 @@ class WPForo_E2E_Tester {
 				'title'    => $result['title'] ?? '',
 				'excerpt'  => isset( $result['content'] ) ? wp_trim_words( $result['content'], 20 ) : '',
 				'score'    => $result['score'] ?? 0,
-				'url'      => $result['url'] ?? '',
 			];
 		}
 
-		return [
+		$result = [
 			'success'       => $total > 0,
 			'query'         => $query,
 			'total_found'   => $total,
@@ -725,7 +762,17 @@ class WPForo_E2E_Tester {
 			'message'       => $total > 0
 				? sprintf( 'Found %d results in %dms', $total, $query_time )
 				: 'No results found for this query',
+			'diagnostics'   => [
+				'storage_mode'    => $storage_mode,
+				'embedding_count' => $embedding_count,
+				'matching_topics' => $matching_topics,
+				'hint'            => $total == 0 && count( $matching_topics ) > 0
+					? 'Topics with these words exist but embeddings may be in different storage mode or min_score threshold too high'
+					: ( $total == 0 ? 'No indexed topics contain these search terms' : null ),
+			],
 		];
+
+		return $result;
 	}
 
 	private function test_index_topic( $params ) {
