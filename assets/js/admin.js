@@ -5,8 +5,31 @@
 	var apiKeyFull = '';
 
 	function init() {
+		initTabs();
 		loadTenantInfo();
 		bindEvents();
+	}
+
+	function initTabs() {
+		// Restore tab from URL hash
+		var hash = window.location.hash.replace('#', '');
+		if (hash && $('.e2e-tab-btn[data-tab="' + hash + '"]').length) {
+			switchTab(hash);
+		}
+
+		// Tab click handler
+		$('.e2e-tab-btn').on('click', function() {
+			var tab = $(this).data('tab');
+			switchTab(tab);
+			window.location.hash = tab;
+		});
+	}
+
+	function switchTab(tab) {
+		$('.e2e-tab-btn').removeClass('active');
+		$('.e2e-tab-btn[data-tab="' + tab + '"]').addClass('active');
+		$('.e2e-tab-content').removeClass('active');
+		$('.e2e-tab-content[data-tab="' + tab + '"]').addClass('active');
 	}
 
 	function bindEvents() {
@@ -16,11 +39,6 @@
 		$('#load-topics').on('click', loadTopics);
 		$('#filter-attachments').on('change', loadTopics);
 		$('.e2e-run-test').on('click', runTest);
-		$('#clear-results').on('click', clearResults);
-
-		$(document).on('click', '.e2e-result-header', function() {
-			$(this).next('.e2e-result-body').toggleClass('expanded');
-		});
 	}
 
 	function loadTenantInfo() {
@@ -68,22 +86,6 @@
 		$('#info-api-url').text(data.api_base_url || '-');
 		$('#info-board-id').text(data.board_id);
 		$('#storage-mode-select').val(data.storage_mode || 'local');
-		// Debug: log storage mode info
-		console.log('Storage mode debug:', data.storage_mode, data.storage_mode_debug);
-
-		// Show warning if cloud not available but setting is cloud
-		$('.e2e-mode-warning').remove(); // Clean up old inline warnings
-		if (data.mode_warning) {
-			$('#storage-mode-warning-text').text(data.mode_warning);
-			$('#storage-mode-warning').show();
-		} else {
-			$('#storage-mode-warning').hide();
-		}
-
-		// Disable cloud option if not available
-		if (!data.cloud_available) {
-			$('#storage-mode-select option[value="cloud"]').prop('disabled', true).text('Cloud (Business+)');
-		}
 
 		if (data.subscription) {
 			$('#info-plan').text(data.subscription.plan || 'free_trial');
@@ -108,7 +110,7 @@
 		if (data.indexing_stats) {
 			var stats = data.indexing_stats;
 			var statsText = 'Indexed: ' + (stats.total_indexed || 0) +
-				' / Total Topics: ' + (stats.total_topics || 0) +
+				' / Total: ' + (stats.total_topics || 0) +
 				' | Mode: ' + (stats.storage_mode || 'unknown') +
 				' | Size: ' + (stats.storage_size_mb || '0') + ' MB';
 			if (stats.is_indexing) {
@@ -116,18 +118,31 @@
 			}
 			$('#info-indexing').text(statsText);
 		}
+
+		// Show warning if needed
+		if (data.mode_warning) {
+			$('#storage-mode-warning-text').text(data.mode_warning);
+			$('#storage-mode-warning').show();
+		} else {
+			$('#storage-mode-warning').hide();
+		}
+
+		// Disable cloud option if not available
+		if (!data.cloud_available) {
+			$('#storage-mode-select option[value="cloud"]').prop('disabled', true).text('Cloud (Business+)');
+		}
 	}
 
 	function toggleApiKey() {
 		var $keySpan = $('#info-api-key');
 		var $btn = $('#toggle-api-key');
 
-		if ($btn.text() === 'Show Full') {
+		if ($btn.text() === 'Show') {
 			$keySpan.html('<span class="api-key-full">' + apiKeyFull + '</span>');
 			$btn.text('Hide');
 		} else {
 			$keySpan.text(tenantInfo.api_key_masked || '-');
-			$btn.text('Show Full');
+			$btn.text('Show');
 		}
 	}
 
@@ -135,7 +150,7 @@
 		var mode = $('#storage-mode-select').val();
 		var $btn = $('#save-storage-mode');
 
-		$btn.addClass('is-loading').text('Saving');
+		$btn.addClass('is-loading').text('...');
 
 		$.ajax({
 			url: wpforoE2E.ajaxUrl,
@@ -148,7 +163,7 @@
 			success: function(response) {
 				$btn.removeClass('is-loading').text('Save');
 				if (response.success) {
-					alert('Storage mode saved: ' + response.data.storage_mode);
+					loadTenantInfo(); // Refresh to show updated info
 				} else {
 					alert('Error: ' + (response.data.message || 'Failed'));
 				}
@@ -165,7 +180,7 @@
 		var $btn = $('#load-topics');
 		var filter = $('#filter-attachments').is(':checked') ? 'with_attachments' : 'all';
 
-		$btn.addClass('is-loading').text('Loading');
+		$btn.addClass('is-loading').text('...');
 		$select.html('<option value="">Loading...</option>');
 
 		$.ajax({
@@ -178,39 +193,26 @@
 				limit: 50
 			},
 			success: function(response) {
-				$btn.removeClass('is-loading').text('Load Topics');
-				$select.empty();
-				$select.append('<option value="">Select a topic...</option>');
+				$btn.removeClass('is-loading').text('Load');
+				$select.empty().append('<option value="">Select topic...</option>');
 
 				if (response.success && response.data.length) {
 					response.data.forEach(function(topic) {
-						var label = '[' + topic.topicid + '] ' + topic.title.substring(0, 50);
+						var label = '#' + topic.topicid + ' ' + topic.title.substring(0, 40);
 						var attachInfo = '';
-
 						if (topic.has_pdf) attachInfo += ' [PDF]';
 						if (topic.has_image) attachInfo += ' [IMG]';
-						if (topic.attachments.length) {
-							attachInfo += ' (' + topic.attachments.length + ' attachments)';
-						}
 
-						var $option = $('<option></option>')
+						$('<option></option>')
 							.val(topic.topicid)
 							.text(label + attachInfo)
-							.data('topic', topic);
-
-						if (topic.attachments.length) {
-							$option.addClass('topic-has-attachments');
-						}
-
-						$select.append($option);
+							.appendTo($select);
 					});
-				} else {
-					$select.append('<option value="">No topics found</option>');
 				}
 			},
 			error: function() {
-				$btn.removeClass('is-loading').text('Load Topics');
-				$select.html('<option value="">Error loading topics</option>');
+				$btn.removeClass('is-loading').text('Load');
+				$select.html('<option value="">Error loading</option>');
 			}
 		});
 	}
@@ -219,8 +221,10 @@
 		var $btn = $(this);
 		var testType = $btn.data('test');
 		var params = getTestParams(testType);
+		var resultBoxId = getResultBoxId(testType);
 
 		$btn.addClass('is-loading');
+		$('#' + resultBoxId).html('<div class="e2e-loading">Running test...</div>');
 
 		$.ajax({
 			url: wpforoE2E.ajaxUrl,
@@ -233,11 +237,11 @@
 			},
 			success: function(response) {
 				$btn.removeClass('is-loading');
-				renderTestResult(testType, response);
+				renderResult(resultBoxId, response);
 			},
 			error: function(xhr, status, error) {
 				$btn.removeClass('is-loading');
-				renderTestResult(testType, {
+				renderResult(resultBoxId, {
 					success: false,
 					data: { message: 'Connection error: ' + error }
 				});
@@ -248,79 +252,56 @@
 	function getTestParams(testType) {
 		switch (testType) {
 			case 'semantic_search':
-				return {
-					query: $('#search-query').val(),
-					limit: $('#search-limit').val()
-				};
+				return { query: $('#search-query').val(), limit: $('#search-limit').val() };
 			case 'index_topic':
-				return {
-					topicid: $('#topic-select').val()
-				};
+				return { topicid: $('#topic-select').val() };
 			case 'translate':
-				return {
-					postid: $('#translate-postid').val(),
-					language: $('#translate-language').val()
-				};
+				return { postid: $('#translate-postid').val(), language: $('#translate-language').val() };
 			case 'summarize':
-				return {
-					topicid: $('#summarize-topicid').val()
-				};
+				return { topicid: $('#summarize-topicid').val() };
 			case 'suggestions':
-				return {
-					title: $('#suggestion-title').val()
-				};
+				return { title: $('#suggestion-title').val() };
 			case 'moderate':
-				return {
-					content: $('#moderate-content').val()
-				};
+				return { content: $('#moderate-content').val() };
 			case 'chat':
-				return {
-					message: $('#chat-message').val()
-				};
+				return { message: $('#chat-message').val() };
 			default:
 				return {};
 		}
 	}
 
-	function renderTestResult(testType, response) {
+	function getResultBoxId(testType) {
+		var map = {
+			'semantic_search': 'result-search',
+			'index_topic': 'result-index',
+			'translate': 'result-translate',
+			'summarize': 'result-summarize',
+			'suggestions': 'result-suggestions',
+			'moderate': 'result-moderate',
+			'chat': 'result-chat',
+			'rag_status': 'result-rag',
+			'analytics': 'result-analytics'
+		};
+		return map[testType] || 'result-search';
+	}
+
+	function renderResult(boxId, response) {
 		var isSuccess = response.success && response.data && response.data.result && response.data.result.success !== false;
 		var statusClass = isSuccess ? 'success' : 'error';
 		var statusText = isSuccess ? 'SUCCESS' : 'FAILED';
-
 		var duration = response.data && response.data.duration_ms ? response.data.duration_ms + 'ms' : '-';
 		var timestamp = response.data && response.data.timestamp ? response.data.timestamp : new Date().toISOString();
 
 		var resultData = response.success ? response.data : response;
 		var formattedJson = syntaxHighlight(JSON.stringify(resultData, null, 2));
 
-		var html = '<div class="e2e-result-item">' +
-			'<div class="e2e-result-header">' +
-				'<span class="test-name">' + formatTestName(testType) + '</span>' +
-				'<span class="test-meta">' + duration + ' | ' + timestamp + '</span>' +
-				'<span class="test-status ' + statusClass + '">' + statusText + '</span>' +
-			'</div>' +
-			'<div class="e2e-result-body expanded">' +
-				'<pre>' + formattedJson + '</pre>' +
-			'</div>' +
-		'</div>';
+		var html = '<div class="e2e-result-meta">' +
+			'<span class="' + statusClass + '">' + statusText + '</span> | ' +
+			duration + ' | ' + timestamp +
+		'</div>' +
+		'<pre>' + formattedJson + '</pre>';
 
-		$('#test-results').prepend(html);
-	}
-
-	function formatTestName(testType) {
-		var names = {
-			'tenant_status': 'Tenant Status',
-			'semantic_search': 'Semantic Search',
-			'index_topic': 'Index Topic',
-			'translate': 'Translation',
-			'summarize': 'Topic Summarization',
-			'suggestions': 'Topic Suggestions',
-			'moderate': 'Content Moderation',
-			'chat': 'AI Chat',
-			'rag_status': 'RAG Status',
-			'analytics': 'Analytics'
-		};
-		return names[testType] || testType;
+		$('#' + boxId).html(html);
 	}
 
 	function syntaxHighlight(json) {
@@ -340,10 +321,6 @@
 			}
 			return '<span class="' + cls + '">' + match + '</span>';
 		});
-	}
-
-	function clearResults() {
-		$('#test-results').empty();
 	}
 
 	$(document).ready(init);
