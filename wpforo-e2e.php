@@ -327,39 +327,42 @@ class WPForo_E2E_Tester {
 			$storage_mode = WPF()->vector_storage->get_storage_mode( $board_id );
 		}
 
-		// Get sample indexed content for suggestions - from actual embedded content
+		// Get sample indexed content for suggestions - 2-4 word phrases from indexed topics
 		$suggestions = [];
 		if ( isset( WPF()->tables->ai_embeddings ) ) {
 			$emb_table = WPF()->tables->ai_embeddings;
 
-			// Get recent indexed topics with their titles
+			// Get indexed topics with their titles
 			$indexed_topics = $wpdb->get_results(
-				"SELECT DISTINCT t.topicid, t.title, e.updated_at
+				"SELECT DISTINCT t.topicid, t.title
 				 FROM {$topics_table} t
 				 INNER JOIN {$emb_table} e ON t.topicid = e.topicid
 				 WHERE e.topicid > 0 AND t.status = 0 AND t.private = 0
-				 ORDER BY e.updated_at DESC
-				 LIMIT 20",
+				 ORDER BY RAND()
+				 LIMIT 30",
 				ARRAY_A
 			);
 
-			// Use full titles (cleaned) as suggestions - they're guaranteed to match
-			$seen = [];
+			// Extract 2-4 word phrases from titles
+			$all_phrases = [];
 			foreach ( $indexed_topics as $topic ) {
-				// Clean title - remove [migrated] tags and similar
-				$clean_title = preg_replace( '/\s*\[.*?\]\s*/', ' ', $topic['title'] );
-				$clean_title = trim( preg_replace( '/\s+/', ' ', $clean_title ) );
-
-				if ( strlen( $clean_title ) > 5 && ! isset( $seen[ strtolower( $clean_title ) ] ) ) {
-					// Truncate long titles
-					$display = strlen( $clean_title ) > 50 ? substr( $clean_title, 0, 47 ) . '...' : $clean_title;
-					$suggestions[] = [
-						'phrase'  => $clean_title,
-						'display' => $display,
+				$phrases = $this->extract_search_phrases( $topic['title'] );
+				foreach ( $phrases as $phrase ) {
+					$all_phrases[] = [
+						'phrase'  => $phrase,
 						'topicid' => $topic['topicid'],
-						'title'   => $topic['title'],
 					];
-					$seen[ strtolower( $clean_title ) ] = true;
+				}
+			}
+
+			// Shuffle and pick 5 unique phrases
+			shuffle( $all_phrases );
+			$seen = [];
+			foreach ( $all_phrases as $item ) {
+				$key = strtolower( $item['phrase'] );
+				if ( ! isset( $seen[ $key ] ) ) {
+					$suggestions[] = $item;
+					$seen[ $key ] = true;
 					if ( count( $suggestions ) >= 5 ) break;
 				}
 			}
@@ -374,36 +377,41 @@ class WPForo_E2E_Tester {
 	}
 
 	private function extract_search_phrases( $title ) {
-		// Remove common words and extract meaningful phrases
+		// Clean title - remove [tags] and punctuation
+		$title = preg_replace( '/\[.*?\]/', '', $title );
 		$title = strtolower( trim( $title ) );
-		$title = preg_replace( '/[^\w\s]/', ' ', $title ); // Remove punctuation
-		$stop_words = [ 'how', 'to', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'why', 'when', 'where', 'which', 'who', 'in', 'on', 'at', 'for', 'with', 'and', 'or', 'but', 'not', 'this', 'that', 'these', 'those', 'i', 'you', 'we', 'they', 'it', 'can', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'my', 'your', 'our', 'their', 'have', 'has', 'had', 'been', 'being', 'get', 'got', 'any', 'some' ];
+		$title = preg_replace( '/[^\w\s]/', ' ', $title );
+		$title = preg_replace( '/\s+/', ' ', $title );
 
-		$words = preg_split( '/\s+/', $title );
-		$meaningful = array_values( array_filter( $words, function( $w ) use ( $stop_words ) {
+		$stop_words = [ 'how', 'to', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'why', 'when', 'where', 'which', 'who', 'in', 'on', 'at', 'for', 'with', 'and', 'or', 'but', 'not', 'this', 'that', 'these', 'those', 'i', 'you', 'we', 'they', 'it', 'can', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'my', 'your', 'our', 'their', 'have', 'has', 'had', 'been', 'being', 'get', 'got', 'any', 'some', 'migrated', 'test', 'topic', 're' ];
+
+		$words = array_filter( preg_split( '/\s+/', $title ), function( $w ) use ( $stop_words ) {
 			return strlen( $w ) > 2 && ! in_array( $w, $stop_words );
-		} ) );
+		} );
+		$words = array_values( $words );
+
+		if ( count( $words ) < 2 ) {
+			return [];
+		}
 
 		$phrases = [];
 
-		// Single important words (nouns/verbs likely)
-		foreach ( array_slice( $meaningful, 0, 2 ) as $word ) {
-			if ( strlen( $word ) > 4 ) {
-				$phrases[] = $word;
-			}
+		// 2-word phrase
+		if ( count( $words ) >= 2 ) {
+			$phrases[] = $words[0] . ' ' . $words[1];
 		}
 
-		// Two-word phrases
-		if ( count( $meaningful ) >= 2 ) {
-			$phrases[] = $meaningful[0] . ' ' . $meaningful[1];
+		// 3-word phrase
+		if ( count( $words ) >= 3 ) {
+			$phrases[] = $words[0] . ' ' . $words[1] . ' ' . $words[2];
 		}
 
-		// Three-word phrase
-		if ( count( $meaningful ) >= 3 ) {
-			$phrases[] = implode( ' ', array_slice( $meaningful, 0, 3 ) );
+		// 4-word phrase
+		if ( count( $words ) >= 4 ) {
+			$phrases[] = $words[0] . ' ' . $words[1] . ' ' . $words[2] . ' ' . $words[3];
 		}
 
-		return array_unique( $phrases );
+		return $phrases;
 	}
 
 	private function get_index_info() {

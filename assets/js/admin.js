@@ -133,13 +133,13 @@
 
 		// Render suggestions from indexed content
 		if (suggestions.length) {
-			var sugHtml = '<div class="suggestion-label">Try searching (from indexed topics):</div>';
+			var sugHtml = '<div class="suggestion-label">Try searching (from indexed topics):</div><div>';
 			suggestions.forEach(function(s) {
 				if (s && s.phrase) {
-					var display = s.display || s.phrase;
-					sugHtml += '<span class="e2e-suggestion-btn" data-query="' + escapeHtml(s.phrase) + '" title="Topic #' + s.topicid + '">' + escapeHtml(display) + '</span>';
+					sugHtml += '<span class="e2e-suggestion-btn" data-query="' + escapeHtml(s.phrase) + '">' + escapeHtml(s.phrase) + '</span>';
 				}
 			});
+			sugHtml += '</div>';
 			$('#search-suggestions').html(sugHtml);
 
 			// Bind click
