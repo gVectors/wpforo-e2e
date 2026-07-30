@@ -167,10 +167,10 @@
 .e2e-info-sm {
 	display: flex;
 	justify-content: space-between;
-	padding: 6px 10px;
+	padding: 8px 12px;
 	background: #fff;
 	border-radius: 3px;
-	font-size: 12px;
+	font-size: 14px;
 }
 
 .e2e-info-sm .label {
