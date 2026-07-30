@@ -762,19 +762,8 @@ class WPForo_E2E_Tester {
 
 		$query = sanitize_text_field( $params['query'] ?? 'test search query' );
 		$limit = intval( $params['limit'] ?? 5 );
+		$requested_mode = sanitize_text_field( $params['storage_mode'] ?? 'current' );
 		$board_id = WPF()->board->get_current( 'boardid' );
-
-		// Diagnostic info
-		$storage_mode = 'local';
-		if ( isset( WPF()->vector_storage ) ) {
-			$storage_mode = WPF()->vector_storage->get_storage_mode( $board_id );
-		}
-
-		// Check if we have embeddings at all
-		$embedding_count = 0;
-		if ( isset( WPF()->tables->ai_embeddings ) ) {
-			$embedding_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . WPF()->tables->ai_embeddings );
-		}
 
 		// Use the REAL search path: VectorStorageManager (routes to local or cloud)
 		if ( ! isset( WPF()->vector_storage ) ) {
@@ -784,7 +773,32 @@ class WPForo_E2E_Tester {
 			];
 		}
 
+		// Get current storage mode
+		$current_mode = WPF()->vector_storage->get_storage_mode( $board_id );
+		$original_mode = $current_mode;
+
+		// Temporarily switch storage mode if requested
+		if ( $requested_mode !== 'current' && in_array( $requested_mode, [ 'local', 'cloud' ], true ) ) {
+			update_option( 'wpforo_ai_storage_mode_' . $board_id, $requested_mode );
+			WPF()->vector_storage->reset_storage_mode_cache();
+			$storage_mode = $requested_mode;
+		} else {
+			$storage_mode = $current_mode;
+		}
+
+		// Check if we have embeddings at all
+		$embedding_count = 0;
+		if ( isset( WPF()->tables->ai_embeddings ) ) {
+			$embedding_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . WPF()->tables->ai_embeddings );
+		}
+
 		$raw_results = WPF()->vector_storage->semantic_search( $query, $limit );
+
+		// Restore original storage mode if we changed it
+		if ( $requested_mode !== 'current' && $requested_mode !== $original_mode ) {
+			update_option( 'wpforo_ai_storage_mode_' . $board_id, $original_mode );
+			WPF()->vector_storage->reset_storage_mode_cache();
+		}
 
 		if ( is_wp_error( $raw_results ) ) {
 			return [

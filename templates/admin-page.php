@@ -104,9 +104,14 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 				<div class="e2e-test-form">
 					<h3>Run Test</h3>
 					<div class="e2e-form-row">
-						<input type="text" id="search-query" placeholder="Search query..." value="how to configure">
-						<input type="number" id="search-limit" placeholder="Limit" value="5" min="1" max="20" style="width:80px;">
-						<button type="button" class="button button-primary e2e-run-test" data-test="semantic_search">Run Test</button>
+						<input type="text" id="search-query" placeholder="Search query..." value="how to configure" style="flex:1;">
+						<select id="search-storage-mode" title="Storage mode to search">
+							<option value="current">Current Mode</option>
+							<option value="local">Local</option>
+							<option value="cloud">Cloud</option>
+						</select>
+						<input type="number" id="search-limit" placeholder="Limit" value="5" min="1" max="20" style="width:70px;">
+						<button type="button" class="button button-primary e2e-run-test" data-test="semantic_search">Search</button>
 					</div>
 					<div class="e2e-suggestions" id="search-suggestions"></div>
 				</div>
@@ -126,6 +131,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 								<tr>
 									<th>Date</th>
 									<th>Query</th>
+									<th>Mode</th>
 									<th>Results</th>
 									<th>Time</th>
 									<th>Avg</th>
@@ -136,7 +142,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 								</tr>
 							</thead>
 							<tbody id="search-history-body">
-								<tr><td colspan="9" class="e2e-loading">Loading history...</td></tr>
+								<tr><td colspan="10" class="e2e-loading">Loading history...</td></tr>
 							</tbody>
 						</table>
 					</div>

@@ -476,3 +476,19 @@
 .e2e-enhanced-no {
 	color: #999;
 }
+
+/* Storage mode dropdown in form */
+#search-storage-mode {
+	padding: 0px 10px;
+	min-width: 136px;
+}
+
+/* Mode badge in history */
+.e2e-mode-local {
+	color: #1d2327;
+}
+
+.e2e-mode-cloud {
+	color: #2271b1;
+	font-weight: 600;
+}

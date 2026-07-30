@@ -387,7 +387,11 @@
 	function getTestParams(testType) {
 		switch (testType) {
 			case 'semantic_search':
-				return { query: $('#search-query').val(), limit: $('#search-limit').val() };
+				return {
+					query: $('#search-query').val(),
+					limit: $('#search-limit').val(),
+					storage_mode: $('#search-storage-mode').val()
+				};
 			case 'index_topic':
 				return { topicid: $('#topic-select').val() };
 			case 'translate':
@@ -460,7 +464,7 @@
 
 	function loadSearchHistory() {
 		var $tbody = $('#search-history-body');
-		$tbody.html('<tr><td colspan="9" class="e2e-loading">Loading...</td></tr>');
+		$tbody.html('<tr><td colspan="10" class="e2e-loading">Loading...</td></tr>');
 
 		$.ajax({
 			url: wpforoE2E.ajaxUrl,
@@ -474,11 +478,11 @@
 				if (response.success && response.data.length) {
 					renderSearchHistory(response.data);
 				} else {
-					$tbody.html('<tr><td colspan="9" style="text-align:center;color:#666;">No test history yet. Run a search test to start tracking.</td></tr>');
+					$tbody.html('<tr><td colspan="10" style="text-align:center;color:#666;">No test history yet. Run a search test to start tracking.</td></tr>');
 				}
 			},
 			error: function() {
-				$tbody.html('<tr><td colspan="9" class="e2e-loading">Error loading history</td></tr>');
+				$tbody.html('<tr><td colspan="10" class="e2e-loading">Error loading history</td></tr>');
 			}
 		});
 	}
@@ -507,9 +511,13 @@
 				? '<span class="e2e-enhanced-yes">Yes</span>'
 				: '<span class="e2e-enhanced-no">No</span>';
 
+			var storageMode = row.storage_mode || 'local';
+			var modeClass = storageMode === 'cloud' ? 'e2e-mode-cloud' : 'e2e-mode-local';
+
 			html += '<tr data-row-id="' + row.id + '">';
 			html += '<td>' + formatDate(row.created_at) + '</td>';
 			html += '<td class="query-cell" title="' + escapeHtml(row.query) + '">' + escapeHtml(row.query) + '</td>';
+			html += '<td><span class="' + modeClass + '">' + storageMode + '</span></td>';
 			html += '<td>' + row.total_results + '</td>';
 			html += '<td>' + row.query_time_ms + 'ms</td>';
 			html += '<td>' + row.avg_score + '%</td>';
@@ -523,7 +531,7 @@
 			html += '</tr>';
 
 			html += '<tr class="e2e-history-row-details" id="details-row-' + idx + '" style="display:none;">';
-			html += '<td colspan="9"><strong>Results & Enhancement:</strong><pre>' + syntaxHighlight(JSON.stringify(row.results_json, null, 2)) + '</pre></td>';
+			html += '<td colspan="10"><strong>Results & Enhancement:</strong><pre>' + syntaxHighlight(JSON.stringify(row.results_json, null, 2)) + '</pre></td>';
 			html += '</tr>';
 		});
 
