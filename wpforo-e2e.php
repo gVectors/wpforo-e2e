@@ -339,32 +339,59 @@ class WPForo_E2E_Tester {
 				 INNER JOIN {$emb_table} e ON t.topicid = e.topicid
 				 WHERE e.topicid > 0 AND t.status = 0 AND t.private = 0
 				 ORDER BY RAND()
-				 LIMIT 30",
+				 LIMIT 50",
 				ARRAY_A
 			);
 
-			// Extract 2-4 word phrases from titles
-			$all_phrases = [];
+			// Collect all 2, 3, 4 word phrases separately
+			$two_word = [];
+			$three_word = [];
+			$four_word = [];
+
 			foreach ( $indexed_topics as $topic ) {
 				$phrases = $this->extract_search_phrases( $topic['title'] );
 				foreach ( $phrases as $phrase ) {
-					$all_phrases[] = [
-						'phrase'  => $phrase,
-						'topicid' => $topic['topicid'],
-					];
+					$word_count = count( explode( ' ', $phrase ) );
+					$item = [ 'phrase' => $phrase, 'topicid' => $topic['topicid'] ];
+					if ( $word_count == 2 ) {
+						$two_word[] = $item;
+					} elseif ( $word_count == 3 ) {
+						$three_word[] = $item;
+					} elseif ( $word_count == 4 ) {
+						$four_word[] = $item;
+					}
 				}
 			}
 
-			// Shuffle and pick 5 unique phrases
-			shuffle( $all_phrases );
+			// Shuffle each group
+			shuffle( $two_word );
+			shuffle( $three_word );
+			shuffle( $four_word );
+
+			// Pick unique phrases: 2 two-word, 2 three-word, 1 four-word
 			$seen = [];
-			foreach ( $all_phrases as $item ) {
-				$key = strtolower( $item['phrase'] );
-				if ( ! isset( $seen[ $key ] ) ) {
-					$suggestions[] = $item;
-					$seen[ $key ] = true;
-					if ( count( $suggestions ) >= 5 ) break;
+			$pick = function( &$arr, $count ) use ( &$suggestions, &$seen ) {
+				$picked = 0;
+				foreach ( $arr as $item ) {
+					$key = strtolower( $item['phrase'] );
+					if ( ! isset( $seen[ $key ] ) ) {
+						$suggestions[] = $item;
+						$seen[ $key ] = true;
+						$picked++;
+						if ( $picked >= $count ) break;
+					}
 				}
+			};
+
+			$pick( $two_word, 2 );
+			$pick( $three_word, 2 );
+			$pick( $four_word, 1 );
+
+			// If still less than 5, fill from any remaining
+			if ( count( $suggestions ) < 5 ) {
+				$all_remaining = array_merge( $two_word, $three_word, $four_word );
+				shuffle( $all_remaining );
+				$pick( $all_remaining, 5 - count( $suggestions ) );
 			}
 		}
 
@@ -372,7 +399,7 @@ class WPForo_E2E_Tester {
 			'database'    => $db_stats,
 			'settings'    => $settings,
 			'storage_mode' => $storage_mode,
-			'suggestions' => array_filter( array_unique( $suggestions ) ),
+			'suggestions' => $suggestions,
 		];
 	}
 
