@@ -118,9 +118,13 @@ class WPForo_E2E_Tester {
 
 		// Get storage mode from VectorStorageManager (the authoritative source)
 		$storage_mode = 'local';
+		$storage_mode_source = 'default';
 		if ( isset( WPF()->vector_storage ) ) {
 			$storage_mode = WPF()->vector_storage->get_storage_mode( $board_id );
+			$storage_mode_source = 'vector_storage';
 		}
+		// Also check raw option for debugging
+		$raw_option = get_option( 'wpforo_ai_storage_mode_' . $board_id, 'NOT_SET' );
 
 		$info = [
 			'connected'      => $ai_client->is_connected(),
@@ -128,6 +132,11 @@ class WPForo_E2E_Tester {
 			'api_key_masked' => $this->mask_api_key( $api_key ),
 			'api_key_full'   => $api_key, // For debugging
 			'storage_mode'   => $storage_mode,
+			'storage_mode_debug' => [
+				'source'     => $storage_mode_source,
+				'raw_option' => $raw_option,
+				'board_id'   => $board_id,
+			],
 			'board_id'       => $board_id,
 			'api_base_url'   => defined( 'WPFORO_AI_API' ) ? WPFORO_AI_API : 'https://api.gvectors.com/v1',
 		];
