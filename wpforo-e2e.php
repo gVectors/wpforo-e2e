@@ -729,25 +729,15 @@ class WPForo_E2E_Tester {
 			$embedding_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . WPF()->tables->ai_embeddings );
 		}
 
-		// Check if query words exist in any indexed content
-		$query_words = array_filter( explode( ' ', strtolower( $query ) ), fn($w) => strlen($w) > 2 );
-		$matching_topics = [];
-		if ( ! empty( $query_words ) && isset( WPF()->tables->ai_embeddings ) ) {
-			$like_clauses = [];
-			foreach ( $query_words as $word ) {
-				$like_clauses[] = $wpdb->prepare( "t.title LIKE %s", '%' . $wpdb->esc_like( $word ) . '%' );
-			}
-			$matching_topics = $wpdb->get_results(
-				"SELECT DISTINCT t.topicid, t.title
-				 FROM {$wpdb->prefix}wpforo_topics t
-				 INNER JOIN " . WPF()->tables->ai_embeddings . " e ON t.topicid = e.topicid
-				 WHERE (" . implode( ' OR ', $like_clauses ) . ")
-				 LIMIT 5",
-				ARRAY_A
-			);
+		// Use the REAL search path: VectorStorageManager (routes to local or cloud)
+		if ( ! isset( WPF()->vector_storage ) ) {
+			return [
+				'success' => false,
+				'error'   => 'VectorStorageManager not available',
+			];
 		}
 
-		$raw_results = WPF()->ai_client->semantic_search( $query, $limit );
+		$raw_results = WPF()->vector_storage->semantic_search( $query, $limit );
 
 		if ( is_wp_error( $raw_results ) ) {
 			return [
@@ -756,50 +746,76 @@ class WPForo_E2E_Tester {
 				'diagnostics' => [
 					'storage_mode'    => $storage_mode,
 					'embedding_count' => $embedding_count,
-					'matching_topics' => $matching_topics,
 				],
 			];
 		}
 
-		// Parse the nested response structure
+		// Parse the response (same structure as real wpForo search)
 		$search_results = $raw_results['results'] ?? [];
 		$total = $raw_results['total'] ?? count( $search_results );
 		$query_time = $raw_results['query_time_ms'] ?? 0;
 		$credits_used = $raw_results['credits_used'] ?? 0;
 
-		// Format results for display
-		$formatted_results = [];
+		// Enrich results with forum data (like the real search does)
+		$enriched_results = [];
+		$min_score_setting = (int) wpfval( WPF()->settings->ai, 'search_min_score' );
+		$is_local = $storage_mode === 'local';
+		$min_score_percent = $is_local ? max( 15, round( $min_score_setting / 3 ) ) : $min_score_setting;
+
 		foreach ( $search_results as $result ) {
-			$formatted_results[] = [
-				'topicid'  => $result['topicid'] ?? 0,
-				'postid'   => $result['postid'] ?? 0,
-				'title'    => $result['title'] ?? '',
-				'excerpt'  => isset( $result['content'] ) ? wp_trim_words( $result['content'], 20 ) : '',
-				'score'    => $result['score'] ?? 0,
+			$topic_id = $result['topic_id'] ?? $result['topicid'] ?? 0;
+			$post_id = $result['post_id'] ?? $result['postid'] ?? 0;
+			$score = $result['score'] ?? 0;
+			$score_percent = round( $score * 100 );
+
+			// Skip low scores
+			if ( $min_score_percent > 0 && $score_percent < $min_score_percent ) {
+				continue;
+			}
+
+			$topic = $topic_id ? wpforo_topic( $topic_id ) : null;
+			$content = $result['content'] ?? $result['excerpt'] ?? '';
+
+			// Relevance label
+			if ( $is_local ) {
+				$relevance = $score_percent >= 25 ? 'Excellent' : ( $score_percent >= 20 ? 'Good' : ( $score_percent >= 15 ? 'Relevant' : 'Low' ) );
+			} else {
+				$relevance = $score_percent >= 80 ? 'Excellent' : ( $score_percent >= 60 ? 'Good' : ( $score_percent >= 40 ? 'Relevant' : 'Low' ) );
+			}
+
+			$enriched_results[] = [
+				'topic_id'   => $topic_id,
+				'post_id'    => $post_id,
+				'title'      => $result['title'] ?? ( $topic ? $topic['title'] : '' ),
+				'excerpt'    => wp_trim_words( wp_strip_all_tags( $content ), 30 ),
+				'score'      => $score_percent . '%',
+				'relevance'  => $relevance,
+				'forum'      => $topic ? wpforo_forum( $topic['forumid'], 'title' ) : '',
+				'url'        => $result['url'] ?? ( $topic ? wpforo_topic( $topic_id, 'url' ) : '' ),
 			];
 		}
 
-		$result = [
-			'success'       => $total > 0,
+		// Check for AI enhancement setting
+		$enhance_enabled = wpfval( WPF()->settings->ai, 'search_enhance' );
+
+		return [
+			'success'       => count( $enriched_results ) > 0,
 			'query'         => $query,
-			'total_found'   => $total,
+			'total_found'   => count( $enriched_results ),
+			'total_raw'     => $total,
 			'query_time_ms' => $query_time,
 			'credits_used'  => $credits_used,
-			'results'       => $formatted_results,
-			'message'       => $total > 0
-				? sprintf( 'Found %d results in %dms', $total, $query_time )
-				: 'No results found for this query',
-			'diagnostics'   => [
-				'storage_mode'    => $storage_mode,
-				'embedding_count' => $embedding_count,
-				'matching_topics' => $matching_topics,
-				'hint'            => $total == 0 && count( $matching_topics ) > 0
-					? 'Topics with these words exist but embeddings may be in different storage mode or min_score threshold too high'
-					: ( $total == 0 ? 'No indexed topics contain these search terms' : null ),
+			'results'       => $enriched_results,
+			'message'       => count( $enriched_results ) > 0
+				? sprintf( 'Found %d results in %dms', count( $enriched_results ), $query_time )
+				: 'No results found (or all below min_score threshold)',
+			'settings_used' => [
+				'storage_mode'     => $storage_mode,
+				'min_score'        => $min_score_percent . '%',
+				'enhance_enabled'  => $enhance_enabled ? 'Yes' : 'No',
+				'embedding_count'  => $embedding_count,
 			],
 		];
-
-		return $result;
 	}
 
 	private function test_index_topic( $params ) {
