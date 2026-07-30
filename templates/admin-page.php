@@ -170,7 +170,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 				<div class="e2e-test-form">
 					<h3>Test Topic Indexing</h3>
 					<div class="e2e-index-form">
-						<div class="e2e-form-row">
+						<div class="e2e-form-row full-width">
 							<label class="e2e-form-label">Topic:</label>
 							<select id="topic-select">
 								<option value="">Loading topics...</option>
@@ -179,17 +179,16 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 						</div>
 						<div class="e2e-form-row">
 							<label class="e2e-form-label">Filter:</label>
-							<label class="e2e-checkbox"><input type="checkbox" id="filter-with-images"> Has images</label>
-							<label class="e2e-checkbox"><input type="checkbox" id="filter-with-docs"> Has documents</label>
+							<label class="e2e-checkbox"><input type="checkbox" id="filter-with-images"> <span>Has images</span></label>
+							<label class="e2e-checkbox"><input type="checkbox" id="filter-with-docs"> <span>Has documents</span></label>
 						</div>
 						<div class="e2e-form-row">
-							<label class="e2e-form-label">Include:</label>
-							<label class="e2e-checkbox"><input type="checkbox" id="index-include-images" checked> Process images</label>
-							<label class="e2e-checkbox"><input type="checkbox" id="index-include-docs" checked> Process documents</label>
+							<label class="e2e-form-label">Process:</label>
+							<label class="e2e-checkbox"><input type="checkbox" id="index-include-images" checked> <span>Images</span></label>
+							<label class="e2e-checkbox"><input type="checkbox" id="index-include-docs" checked> <span>Documents</span></label>
 						</div>
-						<div class="e2e-form-row">
-							<label class="e2e-form-label"></label>
-							<button type="button" class="button button-primary e2e-run-test" data-test="index_topic">Run Indexing Test</button>
+						<div class="e2e-form-row actions">
+							<button type="button" class="button button-primary button-hero e2e-run-test" data-test="index_topic">Run Indexing Test</button>
 						</div>
 					</div>
 					<div class="e2e-result-box" id="result-index"></div>
