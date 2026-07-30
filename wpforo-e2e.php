@@ -137,7 +137,14 @@ class WPForo_E2E_Tester {
 				'total'     => $subscription['credits_total'] ?? 0,
 			];
 			$info['features_enabled'] = $status['features_enabled'] ?? [];
-			$info['indexing_stats'] = $status['indexing_stats'] ?? [];
+
+			// Get indexing stats from VectorStorageManager (not API)
+			if ( isset( WPF()->vector_storage ) ) {
+				$info['indexing_stats'] = WPF()->vector_storage->get_indexing_stats();
+			} else {
+				$info['indexing_stats'] = [];
+			}
+
 			// Include raw status for debugging
 			$info['raw_status'] = $status;
 		} else {

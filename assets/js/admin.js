@@ -91,10 +91,14 @@
 
 		if (data.indexing_stats) {
 			var stats = data.indexing_stats;
-			$('#info-indexing').text(
-				'Topics: ' + (stats.indexed_topics || 0) + ' / ' + (stats.total_topics || 0) +
-				', Posts: ' + (stats.indexed_posts || 0) + ' / ' + (stats.total_posts || 0)
-			);
+			var statsText = 'Indexed: ' + (stats.total_indexed || 0) +
+				' / Total Topics: ' + (stats.total_topics || 0) +
+				' | Mode: ' + (stats.storage_mode || 'unknown') +
+				' | Size: ' + (stats.storage_size_mb || '0') + ' MB';
+			if (stats.is_indexing) {
+				statsText += ' | Progress: ' + (stats.indexing_progress || 0) + '%';
+			}
+			$('#info-indexing').text(statsText);
 		}
 	}
 
