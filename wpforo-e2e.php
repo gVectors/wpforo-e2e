@@ -126,19 +126,31 @@ class WPForo_E2E_Tester {
 		// Also check raw option for debugging
 		$raw_option = get_option( 'wpforo_ai_storage_mode_' . $board_id, 'NOT_SET' );
 
+		// Check if cloud storage is available for this plan
+		$cloud_available = $ai_client->is_feature_available( 'vector_db_cloud_storage' );
+		$effective_mode = ( $storage_mode === 'cloud' && ! $cloud_available ) ? 'local' : $storage_mode;
+		$mode_warning = ( $storage_mode === 'cloud' && ! $cloud_available )
+			? 'Setting is "cloud" but your plan does not support cloud storage. Effective mode: local'
+			: null;
+
 		$info = [
-			'connected'      => $ai_client->is_connected(),
-			'tenant_id'      => $tenant_id,
-			'api_key_masked' => $this->mask_api_key( $api_key ),
-			'api_key_full'   => $api_key, // For debugging
-			'storage_mode'   => $storage_mode,
+			'connected'        => $ai_client->is_connected(),
+			'tenant_id'        => $tenant_id,
+			'api_key_masked'   => $this->mask_api_key( $api_key ),
+			'api_key_full'     => $api_key, // For debugging
+			'storage_mode'     => $effective_mode, // Use effective mode for dropdown
+			'storage_mode_setting' => $storage_mode, // Raw setting
+			'cloud_available'  => $cloud_available,
+			'mode_warning'     => $mode_warning,
 			'storage_mode_debug' => [
-				'source'     => $storage_mode_source,
-				'raw_option' => $raw_option,
-				'board_id'   => $board_id,
+				'source'       => $storage_mode_source,
+				'raw_option'   => $raw_option,
+				'board_id'     => $board_id,
+				'cloud_available' => $cloud_available,
+				'effective'    => $effective_mode,
 			],
-			'board_id'       => $board_id,
-			'api_base_url'   => defined( 'WPFORO_AI_API' ) ? WPFORO_AI_API : 'https://api.gvectors.com/v1',
+			'board_id'         => $board_id,
+			'api_base_url'     => defined( 'WPFORO_AI_API' ) ? WPFORO_AI_API : 'https://api.gvectors.com/v1',
 		];
 
 		if ( is_array( $status ) && ! is_wp_error( $status ) ) {
