@@ -128,15 +128,18 @@ class WPForo_E2E_Tester {
 		];
 
 		if ( is_array( $status ) && ! is_wp_error( $status ) ) {
+			$subscription = $status['subscription'] ?? [];
 			$info['status'] = 'active';
-			$info['subscription'] = $status['subscription'] ?? [];
+			$info['subscription'] = $subscription;
 			$info['credits'] = [
-				'remaining' => $status['credits']['remaining'] ?? 0,
-				'used'      => $status['credits']['used'] ?? 0,
-				'total'     => $status['credits']['total'] ?? 0,
+				'remaining' => $subscription['credits_remaining'] ?? 0,
+				'used'      => $subscription['credits_used'] ?? 0,
+				'total'     => $subscription['credits_total'] ?? 0,
 			];
 			$info['features_enabled'] = $status['features_enabled'] ?? [];
 			$info['indexing_stats'] = $status['indexing_stats'] ?? [];
+			// Include raw status for debugging
+			$info['raw_status'] = $status;
 		} else {
 			$info['status'] = 'error';
 			$info['error'] = is_wp_error( $status ) ? $status->get_error_message() : 'Unknown error';
