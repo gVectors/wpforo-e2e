@@ -339,24 +339,28 @@ class WPForo_E2E_Tester {
 				 INNER JOIN {$emb_table} e ON t.topicid = e.topicid
 				 WHERE e.topicid > 0 AND t.status = 0 AND t.private = 0
 				 ORDER BY e.updated_at DESC
-				 LIMIT 10",
+				 LIMIT 20",
 				ARRAY_A
 			);
 
-			// Extract meaningful phrases from indexed topic titles
+			// Use full titles (cleaned) as suggestions - they're guaranteed to match
 			$seen = [];
 			foreach ( $indexed_topics as $topic ) {
-				$phrases = $this->extract_search_phrases( $topic['title'] );
-				foreach ( $phrases as $phrase ) {
-					if ( ! isset( $seen[ $phrase ] ) && strlen( $phrase ) > 3 ) {
-						$suggestions[] = [
-							'phrase'  => $phrase,
-							'topicid' => $topic['topicid'],
-							'title'   => $topic['title'],
-						];
-						$seen[ $phrase ] = true;
-						if ( count( $suggestions ) >= 6 ) break 2;
-					}
+				// Clean title - remove [migrated] tags and similar
+				$clean_title = preg_replace( '/\s*\[.*?\]\s*/', ' ', $topic['title'] );
+				$clean_title = trim( preg_replace( '/\s+/', ' ', $clean_title ) );
+
+				if ( strlen( $clean_title ) > 5 && ! isset( $seen[ strtolower( $clean_title ) ] ) ) {
+					// Truncate long titles
+					$display = strlen( $clean_title ) > 50 ? substr( $clean_title, 0, 47 ) . '...' : $clean_title;
+					$suggestions[] = [
+						'phrase'  => $clean_title,
+						'display' => $display,
+						'topicid' => $topic['topicid'],
+						'title'   => $topic['title'],
+					];
+					$seen[ strtolower( $clean_title ) ] = true;
+					if ( count( $suggestions ) >= 5 ) break;
 				}
 			}
 		}

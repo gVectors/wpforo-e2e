@@ -136,7 +136,8 @@
 			var sugHtml = '<div class="suggestion-label">Try searching (from indexed topics):</div>';
 			suggestions.forEach(function(s) {
 				if (s && s.phrase) {
-					sugHtml += '<span class="e2e-suggestion-btn" data-query="' + escapeHtml(s.phrase) + '" title="From: ' + escapeHtml(s.title) + '">' + escapeHtml(s.phrase) + '</span>';
+					var display = s.display || s.phrase;
+					sugHtml += '<span class="e2e-suggestion-btn" data-query="' + escapeHtml(s.phrase) + '" title="Topic #' + s.topicid + '">' + escapeHtml(display) + '</span>';
 				}
 			});
 			$('#search-suggestions').html(sugHtml);
