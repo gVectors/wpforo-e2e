@@ -175,7 +175,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 							<select id="topic-select">
 								<option value="">Loading topics...</option>
 							</select>
-							<button type="button" class="button button-small" id="refresh-topics">↻</button>
+							<button type="button" class="button" id="refresh-topics" title="Refresh topic list">Refresh</button>
 						</div>
 						<div class="e2e-form-row">
 							<label class="e2e-form-label">Filter:</label>

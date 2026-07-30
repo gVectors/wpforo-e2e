@@ -631,17 +631,38 @@ class WPForo_E2E_Tester {
 		        WHERE t.status = 0 AND t.private = 0";
 
 		// Filter for topics with attachments
+		// Images: <img> tags, [attach] shortcode, image URLs (.jpg, .png, .gif, .webp)
+		// Documents: .pdf, .doc, .docx URLs
 		if ( $filter === 'with_attachments' ) {
 			$sql .= " AND EXISTS (
 				SELECT 1 FROM {$wpdb->prefix}wpforo_posts p
 				WHERE p.topicid = t.topicid
-				AND (p.body LIKE '%<img%' OR p.body LIKE '%.pdf%' OR p.body LIKE '%.docx%' OR p.body LIKE '%.doc%')
+				AND (
+					p.body LIKE '%<img%'
+					OR p.body LIKE '%[attach]%'
+					OR p.body LIKE '%.jpg%'
+					OR p.body LIKE '%.jpeg%'
+					OR p.body LIKE '%.png%'
+					OR p.body LIKE '%.gif%'
+					OR p.body LIKE '%.webp%'
+					OR p.body LIKE '%.pdf%'
+					OR p.body LIKE '%.docx%'
+					OR p.body LIKE '%.doc%'
+				)
 			)";
 		} elseif ( $filter === 'with_images' ) {
 			$sql .= " AND EXISTS (
 				SELECT 1 FROM {$wpdb->prefix}wpforo_posts p
 				WHERE p.topicid = t.topicid
-				AND p.body LIKE '%<img%'
+				AND (
+					p.body LIKE '%<img%'
+					OR p.body LIKE '%[attach]%'
+					OR p.body LIKE '%.jpg%'
+					OR p.body LIKE '%.jpeg%'
+					OR p.body LIKE '%.png%'
+					OR p.body LIKE '%.gif%'
+					OR p.body LIKE '%.webp%'
+				)
 			)";
 		} elseif ( $filter === 'with_documents' ) {
 			$sql .= " AND EXISTS (
@@ -679,42 +700,65 @@ class WPForo_E2E_Tester {
 		global $wpdb;
 
 		$attachments = [];
+		$image_exts = [ 'jpg', 'jpeg', 'png', 'gif', 'webp' ];
+		$doc_exts = [ 'pdf', 'doc', 'docx', 'txt' ];
 
-		// Get posts with attachments
+		// Get posts
 		$posts = $wpdb->get_results( $wpdb->prepare(
 			"SELECT postid, body FROM {$wpdb->prefix}wpforo_posts WHERE topicid = %d",
 			$topicid
 		) );
 
 		foreach ( $posts as $post ) {
-			// Check for [attach] shortcodes
-			if ( preg_match_all( '/\[attach\](\d+)\[\/attach\]/i', $post->body, $matches ) ) {
+			$body = $post->body;
+
+			// 1. Check for [attach] shortcodes (Advanced Attachments addon)
+			if ( preg_match_all( '/\[attach\](\d+)\[\/attach\]/i', $body, $matches ) ) {
 				foreach ( $matches[1] as $attach_id ) {
 					$file = get_attached_file( $attach_id );
 					if ( $file ) {
 						$ext = strtolower( pathinfo( $file, PATHINFO_EXTENSION ) );
-						$type = in_array( $ext, [ 'pdf', 'docx', 'doc', 'txt' ] ) ? 'pdf' :
-						        ( in_array( $ext, [ 'jpg', 'jpeg', 'png', 'gif', 'webp' ] ) ? 'image' : 'other' );
+						$type = in_array( $ext, $doc_exts, true ) ? $ext :
+						        ( in_array( $ext, $image_exts, true ) ? 'image' : 'other' );
 						$attachments[] = [
-							'id'      => $attach_id,
-							'file'    => basename( $file ),
-							'type'    => $type,
-							'postid'  => $post->postid,
+							'id'     => $attach_id,
+							'file'   => basename( $file ),
+							'type'   => $type,
+							'postid' => $post->postid,
 						];
 					}
 				}
 			}
 
-			// Check for embedded images
-			if ( preg_match_all( '/<img[^>]+src=["\']([^"\']+)["\'][^>]*>/i', $post->body, $matches ) ) {
+			// 2. Check for <img> tags
+			if ( preg_match_all( '/<img[^>]+src=["\']([^"\']+)["\'][^>]*>/i', $body, $matches ) ) {
 				foreach ( $matches[1] as $src ) {
-					$attachments[] = [
-						'id'      => 0,
-						'file'    => basename( parse_url( $src, PHP_URL_PATH ) ),
-						'type'    => 'image',
-						'postid'  => $post->postid,
-						'url'     => $src,
-					];
+					// Only local images (same site)
+					if ( strpos( $src, get_site_url() ) !== false || strpos( $src, '/wp-content/' ) === 0 ) {
+						$attachments[] = [
+							'id'     => 0,
+							'file'   => basename( parse_url( $src, PHP_URL_PATH ) ),
+							'type'   => 'image',
+							'postid' => $post->postid,
+						];
+					}
+				}
+			}
+
+			// 3. Check for plain URLs with image/doc extensions
+			if ( preg_match_all( '/https?:\/\/[^\s<>"\']+\.(' . implode( '|', array_merge( $image_exts, $doc_exts ) ) . ')/i', $body, $matches ) ) {
+				foreach ( $matches[0] as $idx => $url ) {
+					$ext = strtolower( $matches[1][ $idx ] );
+					// Only local URLs
+					if ( strpos( $url, get_site_url() ) !== false ) {
+						$type = in_array( $ext, $doc_exts, true ) ? $ext : 'image';
+						$attachments[] = [
+							'id'     => 0,
+							'file'   => basename( parse_url( $url, PHP_URL_PATH ) ),
+							'type'   => $type,
+							'postid' => $post->postid,
+						];
+					}
 				}
 			}
 		}
