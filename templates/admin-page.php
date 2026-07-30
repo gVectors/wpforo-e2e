@@ -153,16 +153,47 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 		<!-- Index Tab -->
 		<div class="e2e-tab-content" data-tab="index">
 			<div class="e2e-panel">
-				<h2>Topic Indexing</h2>
-				<div class="e2e-form-row">
-					<select id="topic-select" style="flex:1;">
-						<option value="">Select a topic...</option>
-					</select>
-					<label style="white-space:nowrap;"><input type="checkbox" id="filter-attachments"> With attachments</label>
-					<button type="button" class="button" id="load-topics">Load</button>
-					<button type="button" class="button button-primary e2e-run-test" data-test="index_topic">Index</button>
+				<h2>Content Indexing</h2>
+
+				<!-- Indexing Info Section -->
+				<div class="e2e-feature-info" id="index-info">
+					<div class="e2e-info-loading">Loading indexing info...</div>
 				</div>
-				<div class="e2e-result-box" id="result-index"></div>
+
+				<!-- Indexing Flow Diagram -->
+				<div class="e2e-flow-diagram" id="index-diagram">
+					<h4>How Indexing Works</h4>
+					<div class="e2e-diagram-loading">Loading...</div>
+				</div>
+
+				<!-- Test Form -->
+				<div class="e2e-test-form">
+					<h3>Test Topic Indexing</h3>
+					<div class="e2e-index-form">
+						<div class="e2e-form-row">
+							<label class="e2e-form-label">Topic:</label>
+							<select id="topic-select">
+								<option value="">Loading topics...</option>
+							</select>
+							<button type="button" class="button button-small" id="refresh-topics">↻</button>
+						</div>
+						<div class="e2e-form-row">
+							<label class="e2e-form-label">Filter:</label>
+							<label class="e2e-checkbox"><input type="checkbox" id="filter-with-images"> Has images</label>
+							<label class="e2e-checkbox"><input type="checkbox" id="filter-with-docs"> Has documents</label>
+						</div>
+						<div class="e2e-form-row">
+							<label class="e2e-form-label">Include:</label>
+							<label class="e2e-checkbox"><input type="checkbox" id="index-include-images" checked> Process images</label>
+							<label class="e2e-checkbox"><input type="checkbox" id="index-include-docs" checked> Process documents</label>
+						</div>
+						<div class="e2e-form-row">
+							<label class="e2e-form-label"></label>
+							<button type="button" class="button button-primary e2e-run-test" data-test="index_topic">Run Indexing Test</button>
+						</div>
+					</div>
+					<div class="e2e-result-box" id="result-index"></div>
+				</div>
 			</div>
 		</div>
 

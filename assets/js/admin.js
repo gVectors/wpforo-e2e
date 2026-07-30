@@ -41,6 +41,11 @@
 		if (tab === 'search') {
 			loadSearchHistory();
 		}
+
+		// Load topics when index tab is shown
+		if (tab === 'index' && !$('#topic-select').data('loaded')) {
+			loadTopics();
+		}
 	}
 
 	function loadFeatureInfo(tab) {
@@ -87,8 +92,140 @@
 	function renderFeatureInfo(tab, data) {
 		if (tab === 'search') {
 			renderSearchInfo(data);
+		} else if (tab === 'index') {
+			renderIndexInfo(data);
 		}
 		// Add more feature renderers as needed
+	}
+
+	function renderIndexInfo(data) {
+		var mode = data.storage_mode || 'local';
+		var stats = data.indexing_stats || {};
+		var localStats = data.local_stats || {};
+		var cloudStats = data.cloud_stats || {};
+
+		// Info section
+		var html = '<h4>Current Storage: ' + mode.toUpperCase() + '</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('Storage Mode', mode, mode === 'local' ? 'success' : 'warning');
+		html += infoItem('Embedding Model', data.embedding_model || 'Titan v2');
+		html += infoItem('Vector Dimensions', data.embedding_dims || 1024);
+		html += '</div>';
+
+		html += '<h4>Indexing Status</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('Total Forum Topics', data.total_topics || 0);
+		html += infoItem('Topics Indexed', stats.total_indexed || 0, 'success');
+		html += infoItem('Queue Size', data.queue_size || 0, data.queue_size > 0 ? 'warning' : '');
+		html += infoItem('Is Indexing', data.is_indexing ? 'Yes' : 'No', data.is_indexing ? 'warning' : '');
+		if (data.is_indexing && data.indexing_progress > 0) {
+			html += infoItem('Progress', data.indexing_progress + '%');
+		}
+		html += infoItem('Last Indexed', data.last_indexed || 'Never');
+		html += '</div>';
+
+		if (mode === 'local' && localStats.total_embeddings) {
+			html += '<h4>Local Storage Details</h4>';
+			html += '<div class="e2e-info-grid-sm">';
+			html += infoItem('Total Embeddings', localStats.total_embeddings);
+			html += infoItem('Topics with Embeddings', localStats.topics_indexed || 0);
+			html += infoItem('Posts with Embeddings', localStats.posts_indexed || 0);
+			html += infoItem('Storage Size', (localStats.storage_size_mb || 0) + ' MB');
+			html += '</div>';
+		}
+
+		if (mode === 'cloud' && cloudStats.topics_indexed !== undefined) {
+			html += '<h4>Cloud Storage Details</h4>';
+			html += '<div class="e2e-info-grid-sm">';
+			html += infoItem('Topics in S3 Vectors', cloudStats.topics_indexed);
+			html += infoItem('Storage Location', 'AWS S3 Vectors');
+			html += infoItem('Region', 'us-east-1');
+			html += '</div>';
+		}
+
+		$('#index-info').html(html);
+
+		// Render diagram
+		renderIndexDiagram(mode);
+	}
+
+	function renderIndexDiagram(mode) {
+		var html = '<h4>How ' + mode.charAt(0).toUpperCase() + mode.slice(1) + ' Indexing Works</h4>';
+
+		// Text-only posts diagram
+		html += '<div class="e2e-diagram">';
+		html += '<div class="e2e-diagram-label">Text Posts</div>';
+		html += '<div class="e2e-diagram-row">';
+		html += '<div class="e2e-diagram-box">Topic/Post<br><small>text content</small></div>';
+		html += '<div class="e2e-diagram-arrow">→</div>';
+		html += '<div class="e2e-diagram-box">Text Extraction<br><small>clean HTML</small></div>';
+		html += '<div class="e2e-diagram-arrow">→</div>';
+		html += '<div class="e2e-diagram-box highlight">Bedrock API<br><small>Titan Embed v2</small></div>';
+		html += '<div class="e2e-diagram-arrow">→</div>';
+		if (mode === 'local') {
+			html += '<div class="e2e-diagram-box success">WordPress DB<br><small>ai_embeddings</small></div>';
+		} else {
+			html += '<div class="e2e-diagram-box success">S3 Vectors<br><small>AWS Cloud</small></div>';
+		}
+		html += '</div>';
+		html += '</div>';
+
+		// Posts with images diagram
+		html += '<div class="e2e-diagram">';
+		html += '<div class="e2e-diagram-label">Posts with Images</div>';
+		html += '<div class="e2e-diagram-row">';
+		html += '<div class="e2e-diagram-box">Post + Images<br><small>jpg, png, gif</small></div>';
+		html += '<div class="e2e-diagram-arrow">→</div>';
+		html += '<div class="e2e-diagram-box highlight">Claude Vision<br><small>image analysis</small></div>';
+		html += '<div class="e2e-diagram-arrow">→</div>';
+		html += '<div class="e2e-diagram-box">Text + Captions<br><small>combined</small></div>';
+		html += '<div class="e2e-diagram-arrow">→</div>';
+		html += '<div class="e2e-diagram-box highlight">Titan Embed<br><small>1024 dims</small></div>';
+		html += '<div class="e2e-diagram-arrow">→</div>';
+		if (mode === 'local') {
+			html += '<div class="e2e-diagram-box success">WP DB</div>';
+		} else {
+			html += '<div class="e2e-diagram-box success">S3 Vectors</div>';
+		}
+		html += '</div>';
+		html += '</div>';
+
+		// Posts with documents diagram
+		html += '<div class="e2e-diagram">';
+		html += '<div class="e2e-diagram-label">Posts with Documents</div>';
+		html += '<div class="e2e-diagram-row">';
+		html += '<div class="e2e-diagram-box">Post + Docs<br><small>pdf, docx, txt</small></div>';
+		html += '<div class="e2e-diagram-arrow">→</div>';
+		html += '<div class="e2e-diagram-box highlight">Text Extraction<br><small>Textract/parser</small></div>';
+		html += '<div class="e2e-diagram-arrow">→</div>';
+		html += '<div class="e2e-diagram-box">Post + Doc Text<br><small>combined</small></div>';
+		html += '<div class="e2e-diagram-arrow">→</div>';
+		html += '<div class="e2e-diagram-box highlight">Titan Embed<br><small>1024 dims</small></div>';
+		html += '<div class="e2e-diagram-arrow">→</div>';
+		if (mode === 'local') {
+			html += '<div class="e2e-diagram-box success">WP DB</div>';
+		} else {
+			html += '<div class="e2e-diagram-box success">S3 Vectors</div>';
+		}
+		html += '</div>';
+		html += '</div>';
+
+		// Description
+		html += '<div class="e2e-diagram-desc">';
+		if (mode === 'local') {
+			html += '<strong>Local Mode:</strong> All embeddings stored in WordPress database (wp_wpforo_ai_embeddings). ';
+			html += 'Images are analyzed by Claude Vision to generate searchable captions. ';
+			html += 'Documents (PDF, DOCX) are parsed to extract text content. ';
+			html += 'Search uses cosine similarity against local vectors.';
+		} else {
+			html += '<strong>Cloud Mode:</strong> Content sent to gVectors API, processed by AWS Lambda. ';
+			html += 'Images analyzed asynchronously by image_worker Lambda. ';
+			html += 'Documents processed by Textract for text extraction. ';
+			html += 'Vectors stored in S3 Vectors for fast k-NN search at scale.';
+		}
+		html += '</div>';
+
+		$('#index-diagram').html(html);
 	}
 
 	function renderSearchInfo(data) {
@@ -169,8 +306,8 @@
 		$('#refresh-tenant-info').on('click', loadTenantInfo);
 		$('#toggle-api-key').on('click', toggleApiKey);
 		$('#save-storage-mode').on('click', saveStorageMode);
-		$('#load-topics').on('click', loadTopics);
-		$('#filter-attachments').on('change', loadTopics);
+		$('#refresh-topics').on('click', loadTopics);
+		$('#filter-with-images, #filter-with-docs').on('change', loadTopics);
 		$('.e2e-run-test').on('click', runTest);
 		$('#refresh-search-history').on('click', loadSearchHistory);
 		$('#clear-search-history').on('click', clearSearchHistory);
@@ -312,11 +449,16 @@
 
 	function loadTopics() {
 		var $select = $('#topic-select');
-		var $btn = $('#load-topics');
-		var filter = $('#filter-attachments').is(':checked') ? 'with_attachments' : 'all';
+		var $btn = $('#refresh-topics');
+		var filterImages = $('#filter-with-images').is(':checked');
+		var filterDocs = $('#filter-with-docs').is(':checked');
+		var filter = 'all';
+		if (filterImages && filterDocs) filter = 'with_attachments';
+		else if (filterImages) filter = 'with_images';
+		else if (filterDocs) filter = 'with_documents';
 
-		$btn.addClass('is-loading').text('...');
-		$select.html('<option value="">Loading...</option>');
+		$btn.addClass('is-loading');
+		$select.html('<option value="">Loading topics...</option>');
 
 		$.ajax({
 			url: wpforoE2E.ajaxUrl,
@@ -325,29 +467,37 @@
 				action: 'wpforo_e2e_get_topics',
 				nonce: wpforoE2E.nonce,
 				filter: filter,
-				limit: 50
+				limit: 100
 			},
 			success: function(response) {
-				$btn.removeClass('is-loading').text('Load');
-				$select.empty().append('<option value="">Select topic...</option>');
+				$btn.removeClass('is-loading');
+				$select.data('loaded', true);
+				$select.empty().append('<option value="">Select a topic...</option>');
 
 				if (response.success && response.data.length) {
 					response.data.forEach(function(topic) {
-						var label = '#' + topic.topicid + ' ' + topic.title.substring(0, 40);
-						var attachInfo = '';
-						if (topic.has_pdf) attachInfo += ' [PDF]';
-						if (topic.has_image) attachInfo += ' [IMG]';
+						var title = topic.title.length > 50 ? topic.title.substring(0, 50) + '...' : topic.title;
+						var badges = [];
+						if (topic.has_image) badges.push('IMG');
+						if (topic.has_pdf) badges.push('PDF');
+						if (topic.has_doc) badges.push('DOC');
+						var badgeStr = badges.length ? ' [' + badges.join(', ') + ']' : '';
 
 						$('<option></option>')
 							.val(topic.topicid)
-							.text(label + attachInfo)
+							.text('#' + topic.topicid + ' - ' + title + badgeStr)
+							.data('topic', topic)
 							.appendTo($select);
 					});
+					$select.append('<option disabled>───────────────</option>');
+					$select.append('<option disabled>' + response.data.length + ' topics loaded</option>');
+				} else {
+					$select.append('<option disabled>No topics found</option>');
 				}
 			},
 			error: function() {
-				$btn.removeClass('is-loading').text('Load');
-				$select.html('<option value="">Error loading</option>');
+				$btn.removeClass('is-loading');
+				$select.html('<option value="">Error loading topics</option>');
 			}
 		});
 	}
@@ -393,7 +543,11 @@
 					storage_mode: $('#search-storage-mode').val()
 				};
 			case 'index_topic':
-				return { topicid: $('#topic-select').val() };
+				return {
+					topicid: $('#topic-select').val(),
+					include_images: $('#index-include-images').is(':checked') ? 1 : 0,
+					include_docs: $('#index-include-docs').is(':checked') ? 1 : 0
+				};
 			case 'translate':
 				return { postid: $('#translate-postid').val(), language: $('#translate-language').val() };
 			case 'summarize':
@@ -432,6 +586,13 @@
 		var timestamp = response.data && response.data.timestamp ? response.data.timestamp : new Date().toISOString();
 
 		var resultData = response.success ? response.data : response;
+
+		// Special rendering for index results with steps
+		if (boxId === 'result-index' && resultData.result && resultData.result.steps) {
+			renderIndexResult(boxId, resultData, statusClass, statusText, duration, timestamp);
+			return;
+		}
+
 		var formattedJson = syntaxHighlight(JSON.stringify(resultData, null, 2));
 
 		var html = '<div class="e2e-result-meta">' +
@@ -441,6 +602,111 @@
 		'<pre>' + formattedJson + '</pre>';
 
 		$('#' + boxId).html(html);
+	}
+
+	function renderIndexResult(boxId, data, statusClass, statusText, duration, timestamp) {
+		var result = data.result;
+		var steps = result.steps || [];
+
+		var html = '<div class="e2e-result-meta">' +
+			'<span class="' + statusClass + '">' + statusText + '</span> | ' +
+			duration + ' | ' + timestamp +
+		'</div>';
+
+		// Summary header
+		html += '<div class="e2e-index-summary">';
+		html += '<div class="e2e-index-title">' + escapeHtml(result.topic_title || 'Topic #' + result.topicid) + '</div>';
+		html += '<div class="e2e-index-meta">';
+		html += '<span>Mode: <strong>' + (result.storage_mode || 'local') + '</strong></span>';
+		html += '<span>Time: <strong>' + (result.total_time_ms || 0) + 'ms</strong></span>';
+		if (result.summary) {
+			html += '<span>Posts: <strong>' + result.summary.posts_indexed + '</strong></span>';
+			html += '<span>Images: <strong>' + (result.summary.images_processed || 0) + '</strong></span>';
+			html += '<span>Docs: <strong>' + (result.summary.documents_processed || 0) + '</strong></span>';
+		}
+		html += '</div>';
+		if (result.options_used) {
+			html += '<div class="e2e-index-options">';
+			html += 'Options: Images=' + result.options_used.include_images + ', Docs=' + result.options_used.include_docs;
+			html += '</div>';
+		}
+		html += '</div>';
+
+		// Step-by-step flow
+		html += '<div class="e2e-index-flow">';
+		steps.forEach(function(step, idx) {
+			var stepIcon = getStepIcon(step.step);
+			var stepClass = step.success ? 'success' : 'error';
+
+			html += '<div class="e2e-index-step ' + stepClass + '">';
+			html += '<div class="e2e-step-icon">' + stepIcon + '</div>';
+			html += '<div class="e2e-step-content">';
+			html += '<div class="e2e-step-name">' + formatStepName(step.step) + '</div>';
+			html += '<div class="e2e-step-message">' + escapeHtml(step.message) + '</div>';
+
+			// Step data details
+			if (step.data && Object.keys(step.data).length > 0) {
+				html += '<div class="e2e-step-data">';
+				for (var key in step.data) {
+					var val = step.data[key];
+					if (Array.isArray(val) && val.length > 0) {
+						html += '<div class="e2e-step-detail"><span class="key">' + key + ':</span></div>';
+						val.forEach(function(item) {
+							if (typeof item === 'object') {
+								var itemStr = item.filename || item.url || JSON.stringify(item);
+								html += '<div class="e2e-step-subitem">' + escapeHtml(itemStr) + '</div>';
+							}
+						});
+					} else if (typeof val !== 'object') {
+						html += '<div class="e2e-step-detail"><span class="key">' + key + ':</span> ' + val + '</div>';
+					}
+				}
+				html += '</div>';
+			}
+
+			html += '</div>'; // step-content
+			html += '</div>'; // step
+
+			// Arrow between steps
+			if (idx < steps.length - 1) {
+				html += '<div class="e2e-step-arrow">↓</div>';
+			}
+		});
+		html += '</div>';
+
+		// Raw JSON toggle
+		html += '<div class="e2e-json-toggle">';
+		html += '<button type="button" class="button button-small" onclick="jQuery(this).next().toggle(); jQuery(this).text(jQuery(this).next().is(\':visible\') ? \'Hide JSON\' : \'Show JSON\')">Show JSON</button>';
+		html += '<pre style="display:none;">' + syntaxHighlight(JSON.stringify(data, null, 2)) + '</pre>';
+		html += '</div>';
+
+		$('#' + boxId).html(html);
+	}
+
+	function getStepIcon(step) {
+		var icons = {
+			'topic_load': '📄',
+			'posts_load': '📝',
+			'content_analysis': '🔍',
+			'indexing': '⚡',
+			'image_processing': '🖼️',
+			'document_processing': '📎',
+			'storage': '💾'
+		};
+		return icons[step] || '▶';
+	}
+
+	function formatStepName(step) {
+		var names = {
+			'topic_load': 'Load Topic',
+			'posts_load': 'Load Posts',
+			'content_analysis': 'Analyze Content',
+			'indexing': 'Generate Embeddings',
+			'image_processing': 'Process Images',
+			'document_processing': 'Process Documents',
+			'storage': 'Store Vectors'
+		};
+		return names[step] || step;
 	}
 
 	function syntaxHighlight(json) {

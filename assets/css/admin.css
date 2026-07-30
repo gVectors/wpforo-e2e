@@ -145,7 +145,7 @@
 }
 
 .e2e-feature-info h4 {
-	margin: 0 0 10px 0;
+	margin: 10px 0 10px 0;
 	font-size: 13px;
 	color: #1d2327;
 	border-bottom: 1px solid #e2e4e7;
@@ -249,9 +249,13 @@
 }
 
 .e2e-form-row input[type="text"],
-.e2e-form-row input[type="number"],
-.e2e-form-row select {
+.e2e-form-row input[type="number"] {
 	padding: 6px 10px;
+}
+
+.e2e-form-row select {
+	padding: 0 10px;
+	height: 32px;
 }
 
 .e2e-form-row textarea {
@@ -491,4 +495,269 @@
 .e2e-mode-cloud {
 	color: #2271b1;
 	font-weight: 600;
+}
+
+/* Flow Diagram */
+.e2e-flow-diagram {
+	background: #f8f9fa;
+	border: 1px solid #e2e4e7;
+	border-radius: 4px;
+	padding: 15px;
+	margin-bottom: 20px;
+}
+
+.e2e-flow-diagram h4 {
+	margin: 0 0 15px 0;
+	font-size: 13px;
+	color: #1d2327;
+	border-bottom: 1px solid #e2e4e7;
+	padding-bottom: 8px;
+}
+
+.e2e-diagram {
+	margin-top: 10px;
+	margin-bottom: 15px;
+	padding: 12px;
+	background: #fff;
+	border-radius: 4px;
+	border: 1px solid #e2e4e7;
+}
+
+.e2e-diagram-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: #1d2327;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	margin-bottom: 10px;
+	padding-bottom: 6px;
+	border-bottom: 1px dashed #e2e4e7;
+}
+
+.e2e-diagram-row {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	margin-bottom: 15px;
+}
+
+.e2e-diagram-box {
+	background: #fff;
+	border: 2px solid #c3c4c7;
+	border-radius: 6px;
+	padding: 10px 14px;
+	text-align: center;
+	font-size: 12px;
+	font-weight: 600;
+	color: #1d2327;
+	min-width: 90px;
+}
+
+.e2e-diagram-box small {
+	display: block;
+	font-weight: 400;
+	color: #646970;
+	margin-top: 2px;
+}
+
+.e2e-diagram-box.highlight {
+	border-color: #2271b1;
+	background: #e7f3ff;
+}
+
+.e2e-diagram-box.success {
+	border-color: #00a32a;
+	background: #d4edda;
+}
+
+.e2e-diagram-arrow {
+	font-size: 20px;
+	color: #646970;
+	font-weight: bold;
+}
+
+.e2e-diagram-desc {
+	font-size: 12px;
+	color: #646970;
+	line-height: 1.5;
+	padding: 10px;
+	background: #fff;
+	border-radius: 4px;
+}
+
+.e2e-diagram-desc strong {
+	color: #1d2327;
+}
+
+.e2e-diagram-loading {
+	color: #666;
+	font-style: italic;
+	padding: 10px;
+	text-align: center;
+}
+
+/* Index Form */
+.e2e-index-form {
+	background: #f8f9fa;
+	border: 1px solid #e2e4e7;
+	border-radius: 4px;
+	padding: 15px;
+	margin-bottom: 15px;
+}
+
+.e2e-index-form .e2e-form-row {
+	margin-bottom: 10px;
+}
+
+.e2e-index-form .e2e-form-row:last-child {
+	margin-bottom: 0;
+	margin-top: 15px;
+}
+
+.e2e-form-label {
+	min-width: 70px;
+	font-weight: 600;
+	color: #1d2327;
+	font-size: 13px;
+}
+
+.e2e-checkbox {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	margin-right: 15px;
+	font-size: 13px;
+	color: #50575e;
+	cursor: pointer;
+}
+
+.e2e-checkbox input {
+	margin: 0;
+}
+
+#topic-select {
+	flex: 1;
+	max-width: 400px;
+}
+
+/* Index Result Visualization */
+.e2e-index-summary {
+	background: #2d3338;
+	padding: 15px;
+	border-bottom: 1px solid #444;
+}
+
+.e2e-index-title {
+	color: #fff;
+	font-size: 14px;
+	font-weight: 600;
+	margin-bottom: 8px;
+}
+
+.e2e-index-meta {
+	display: flex;
+	gap: 20px;
+	flex-wrap: wrap;
+	font-size: 12px;
+	color: #aaa;
+}
+
+.e2e-index-meta strong {
+	color: #50fa7b;
+}
+
+.e2e-index-options {
+	margin-top: 8px;
+	font-size: 11px;
+	color: #888;
+}
+
+.e2e-index-flow {
+	padding: 20px;
+	background: #1d2327;
+}
+
+.e2e-index-step {
+	display: flex;
+	gap: 15px;
+	padding: 12px 15px;
+	background: #2d3338;
+	border-radius: 6px;
+	border-left: 4px solid #50fa7b;
+}
+
+.e2e-index-step.error {
+	border-left-color: #ff5555;
+}
+
+.e2e-step-icon {
+	font-size: 20px;
+	min-width: 30px;
+	text-align: center;
+}
+
+.e2e-step-content {
+	flex: 1;
+	min-width: 0;
+}
+
+.e2e-step-name {
+	color: #8be9fd;
+	font-weight: 600;
+	font-size: 13px;
+	margin-bottom: 4px;
+}
+
+.e2e-step-message {
+	color: #f8f8f2;
+	font-size: 12px;
+	margin-bottom: 6px;
+}
+
+.e2e-index-step.error .e2e-step-message {
+	color: #ff5555;
+}
+
+.e2e-step-data {
+	font-size: 11px;
+	color: #999;
+}
+
+.e2e-step-detail {
+	margin: 2px 0;
+}
+
+.e2e-step-detail .key {
+	color: #bd93f9;
+}
+
+.e2e-step-subitem {
+	margin-left: 15px;
+	color: #6272a4;
+	font-size: 10px;
+	word-break: break-all;
+}
+
+.e2e-step-arrow {
+	text-align: center;
+	color: #50fa7b;
+	font-size: 16px;
+	padding: 8px 0;
+}
+
+.e2e-json-toggle {
+	padding: 15px;
+	background: #2d3338;
+	border-top: 1px solid #444;
+}
+
+.e2e-json-toggle pre {
+	margin-top: 10px;
+	padding: 10px;
+	background: #1d2327;
+	border-radius: 4px;
+	max-height: 300px;
+	overflow: auto;
 }

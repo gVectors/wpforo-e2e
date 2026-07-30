@@ -492,29 +492,74 @@ class WPForo_E2E_Tester {
 		global $wpdb;
 		$board_id = WPF()->board->get_current( 'boardid' );
 
+		// Storage mode
+		$storage_mode = 'local';
+		if ( isset( WPF()->vector_storage ) ) {
+			$storage_mode = WPF()->vector_storage->get_storage_mode( $board_id );
+		}
+
+		// Get indexing stats from VectorStorageManager
+		$indexing_stats = [];
+		if ( isset( WPF()->vector_storage ) ) {
+			$indexing_stats = WPF()->vector_storage->get_indexing_stats();
+		}
+
 		// Queue status
 		$queue_key = 'wpforo_ai_indexing_queue_' . $board_id;
 		$queue = get_option( $queue_key, [] );
 
-		$local_queue_key = 'wpforo_ai_indexing_queue_local_' . $board_id;
-		$local_queue = get_option( $local_queue_key, [] );
+		$mode_queue_key = 'wpforo_ai_indexing_queue_' . $storage_mode . '_' . $board_id;
+		$mode_queue = get_option( $mode_queue_key, [] );
 
 		// Total topics in forum
 		$total_topics = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}wpforo_topics WHERE status = 0 AND private = 0" );
 
-		// Indexed count
-		$indexed_count = 0;
+		// Local embeddings stats
+		$local_stats = [];
 		if ( isset( WPF()->tables->ai_embeddings ) ) {
-			$indexed_count = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT topicid) FROM " . WPF()->tables->ai_embeddings . " WHERE topicid > 0" );
+			$local_stats = [
+				'total_embeddings' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . WPF()->tables->ai_embeddings ),
+				'topics_indexed'   => (int) $wpdb->get_var( "SELECT COUNT(DISTINCT topicid) FROM " . WPF()->tables->ai_embeddings . " WHERE topicid > 0" ),
+				'posts_indexed'    => (int) $wpdb->get_var( "SELECT COUNT(DISTINCT postid) FROM " . WPF()->tables->ai_embeddings . " WHERE postid > 0" ),
+			];
+
+			// Get storage size
+			$table_status = $wpdb->get_row(
+				$wpdb->prepare( "SHOW TABLE STATUS WHERE Name = %s", WPF()->tables->ai_embeddings )
+			);
+			if ( $table_status ) {
+				$local_stats['storage_size_mb'] = round( ( $table_status->Data_length + $table_status->Index_length ) / 1024 / 1024, 2 );
+			}
+
+			// Last indexed
+			$local_stats['last_indexed'] = $wpdb->get_var( "SELECT MAX(updated_at) FROM " . WPF()->tables->ai_embeddings );
 		}
 
+		// Cloud stats (if cloud mode)
+		$cloud_stats = [];
+		if ( $storage_mode === 'cloud' ) {
+			$cloud_indexed = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}wpforo_topics WHERE cloud = 1" );
+			$cloud_stats = [
+				'topics_indexed' => $cloud_indexed,
+			];
+		}
+
+		// Embedding model info
+		$embedding_model = 'Amazon Titan v2';
+		$embedding_dimensions = 1024;
+
 		return [
-			'total_topics'   => $total_topics,
-			'indexed_count'  => $indexed_count,
-			'pending_count'  => $total_topics - $indexed_count,
-			'queue_size'     => count( $queue ),
-			'local_queue_size' => count( $local_queue ),
-			'is_indexing'    => (bool) get_transient( 'wpforo_ai_indexing_lock_' . $board_id ),
+			'storage_mode'    => $storage_mode,
+			'total_topics'    => $total_topics,
+			'indexing_stats'  => $indexing_stats,
+			'local_stats'     => $local_stats,
+			'cloud_stats'     => $cloud_stats,
+			'queue_size'      => count( $queue ) + count( $mode_queue ),
+			'is_indexing'     => $indexing_stats['is_indexing'] ?? false,
+			'indexing_progress' => $indexing_stats['indexing_progress'] ?? 0,
+			'last_indexed'    => $indexing_stats['last_indexed_at'] ?? null,
+			'embedding_model' => $embedding_model,
+			'embedding_dims'  => $embedding_dimensions,
 		];
 	}
 
@@ -575,7 +620,7 @@ class WPForo_E2E_Tester {
 		global $wpdb;
 
 		$filter = sanitize_text_field( $_POST['filter'] ?? 'all' );
-		$limit = intval( $_POST['limit'] ?? 20 );
+		$limit = intval( $_POST['limit'] ?? 100 );
 
 		$topics = [];
 
@@ -590,7 +635,19 @@ class WPForo_E2E_Tester {
 			$sql .= " AND EXISTS (
 				SELECT 1 FROM {$wpdb->prefix}wpforo_posts p
 				WHERE p.topicid = t.topicid
-				AND (p.body LIKE '%[attach]%' OR p.body LIKE '%<img%' OR p.body LIKE '%.pdf%' OR p.body LIKE '%.docx%')
+				AND (p.body LIKE '%<img%' OR p.body LIKE '%.pdf%' OR p.body LIKE '%.docx%' OR p.body LIKE '%.doc%')
+			)";
+		} elseif ( $filter === 'with_images' ) {
+			$sql .= " AND EXISTS (
+				SELECT 1 FROM {$wpdb->prefix}wpforo_posts p
+				WHERE p.topicid = t.topicid
+				AND p.body LIKE '%<img%'
+			)";
+		} elseif ( $filter === 'with_documents' ) {
+			$sql .= " AND EXISTS (
+				SELECT 1 FROM {$wpdb->prefix}wpforo_posts p
+				WHERE p.topicid = t.topicid
+				AND (p.body LIKE '%.pdf%' OR p.body LIKE '%.docx%' OR p.body LIKE '%.doc%')
 			)";
 		}
 
@@ -609,9 +666,9 @@ class WPForo_E2E_Tester {
 				'posts'       => $row->posts,
 				'forum'       => $row->forum_title,
 				'created'     => $row->created,
-				'attachments' => $attachments,
-				'has_pdf'     => ! empty( array_filter( $attachments, fn( $a ) => $a['type'] === 'pdf' ) ),
 				'has_image'   => ! empty( array_filter( $attachments, fn( $a ) => $a['type'] === 'image' ) ),
+				'has_pdf'     => ! empty( array_filter( $attachments, fn( $a ) => $a['type'] === 'pdf' ) ),
+				'has_doc'     => ! empty( array_filter( $attachments, fn( $a ) => in_array( $a['type'], [ 'doc', 'docx' ], true ) ) ),
 			];
 		}
 
@@ -1046,33 +1103,220 @@ class WPForo_E2E_Tester {
 
 	private function test_index_topic( $params ) {
 		$topicid = intval( $params['topicid'] ?? 0 );
+		$include_images = intval( $params['include_images'] ?? 1 );
+		$include_docs = intval( $params['include_docs'] ?? 1 );
 
 		if ( ! $topicid ) {
 			return [
 				'success' => false,
-				'error'   => 'Topic ID required',
+				'error'   => 'Please select a topic',
 			];
 		}
 
 		$board_id = WPF()->board->get_current( 'boardid' );
-		$storage_mode = get_option( 'wpforo_ai_storage_mode_' . $board_id, 'local' );
+		$storage_mode = WPF()->vector_storage->get_storage_mode( $board_id );
+		$ai_client = WPF()->ai_client;
 
-		// Queue the topic for indexing
-		$result = WPF()->ai_client->queue_topic_for_indexing( $topicid, $board_id );
-
-		if ( is_wp_error( $result ) ) {
+		// Step 1: Get topic info
+		$topic = wpforo_topic( $topicid );
+		if ( ! $topic ) {
 			return [
 				'success' => false,
-				'error'   => $result->get_error_message(),
+				'error'   => 'Topic not found',
+				'steps'   => [ $this->step_result( 'topic_load', false, 'Topic not found' ) ],
 			];
 		}
 
+		$steps = [];
+		$steps[] = $this->step_result( 'topic_load', true, 'Topic loaded', [
+			'title'    => $topic['title'],
+			'posts'    => $topic['posts'],
+			'forumid'  => $topic['forumid'],
+		] );
+
+		// Step 2: Get posts
+		$posts = WPF()->post->get_posts( [ 'topicid' => $topicid, 'orderby' => 'created', 'order' => 'ASC' ] );
+		if ( empty( $posts ) ) {
+			$steps[] = $this->step_result( 'posts_load', false, 'No posts found' );
+			return [ 'success' => false, 'steps' => $steps ];
+		}
+		$steps[] = $this->step_result( 'posts_load', true, 'Posts loaded', [ 'count' => count( $posts ) ] );
+
+		// Step 3: Analyze content (images, documents)
+		$total_images = 0;
+		$total_documents = 0;
+		$posts_with_images = 0;
+		$posts_with_docs = 0;
+		$image_details = [];
+		$doc_details = [];
+
+		foreach ( $posts as $post ) {
+			$body = $post['body'] ?? '';
+
+			// Only extract if including
+			$images = $include_images ? $ai_client->extract_post_images( $body ) : [];
+			$documents = $include_docs ? $ai_client->extract_post_documents( $body ) : [];
+
+			if ( ! empty( $images ) ) {
+				$total_images += count( $images );
+				$posts_with_images++;
+				foreach ( $images as $img ) {
+					$image_details[] = [
+						'postid' => $post['postid'],
+						'url'    => $img['url'] ?? $img,
+						'type'   => pathinfo( $img['url'] ?? $img, PATHINFO_EXTENSION ),
+					];
+				}
+			}
+
+			if ( ! empty( $documents ) ) {
+				$total_documents += count( $documents );
+				$posts_with_docs++;
+				foreach ( $documents as $doc ) {
+					$doc_details[] = [
+						'postid'   => $post['postid'],
+						'url'      => $doc['url'] ?? $doc,
+						'filename' => basename( $doc['url'] ?? $doc ),
+						'type'     => pathinfo( $doc['url'] ?? $doc, PATHINFO_EXTENSION ),
+					];
+				}
+			}
+		}
+
+		// Check plan capabilities
+		$can_process_images = $ai_client->is_image_indexing_enabled();
+		$can_process_docs = $ai_client->is_document_indexing_enabled();
+
+		$analysis_message = 'Content analyzed';
+		if ( ! $include_images && ! $include_docs ) {
+			$analysis_message = 'Text-only indexing (images/docs disabled)';
+		}
+
+		$steps[] = $this->step_result( 'content_analysis', true, $analysis_message, [
+			'images_found'       => $total_images,
+			'documents_found'    => $total_documents,
+			'include_images'     => $include_images ? 'Yes' : 'No',
+			'include_docs'       => $include_docs ? 'Yes' : 'No',
+			'plan_allows_images' => $can_process_images ? 'Yes' : 'No (requires Pro+)',
+			'plan_allows_docs'   => $can_process_docs ? 'Yes' : 'No (requires Pro+)',
+			'images'             => $include_images ? array_slice( $image_details, 0, 5 ) : [],
+			'documents'          => $include_docs ? array_slice( $doc_details, 0, 5 ) : [],
+		] );
+
+		// Step 4: Run actual indexing
+		$start_time = microtime( true );
+		$index_options = [ 'force' => true ];
+		// Note: image/doc processing is controlled by AIClient plan settings, not passed options
+		$index_result = WPF()->vector_storage->index_topic( $topicid, $index_options );
+		$index_time = round( ( microtime( true ) - $start_time ) * 1000 );
+
+		if ( is_wp_error( $index_result ) ) {
+			$steps[] = $this->step_result( 'indexing', false, $index_result->get_error_message() );
+			return [
+				'success'      => false,
+				'topicid'      => $topicid,
+				'storage_mode' => $storage_mode,
+				'steps'        => $steps,
+			];
+		}
+
+		$steps[] = $this->step_result( 'indexing', true, 'Indexing complete', [
+			'indexed_count'   => $index_result['indexed_count'] ?? 0,
+			'noise_filtered'  => $index_result['noise_filtered_count'] ?? 0,
+			'total_posts'     => $index_result['total_posts'] ?? count( $posts ),
+			'time_ms'         => $index_time,
+		] );
+
+		// Step 5: Image processing
+		if ( $total_images > 0 || $include_images ) {
+			$images_processed = $index_result['images_processed'] ?? 0;
+			$img_message = 'No images found';
+			$img_success = true;
+
+			if ( $total_images > 0 ) {
+				if ( ! $include_images ) {
+					$img_message = 'Skipped (disabled in test options)';
+					$img_success = false;
+				} elseif ( ! $can_process_images ) {
+					$img_message = 'Skipped (requires Professional+ plan)';
+					$img_success = false;
+				} elseif ( $images_processed > 0 ) {
+					$img_message = 'Processed via Claude Vision';
+					$img_success = true;
+				} else {
+					$img_message = 'Processing failed or async';
+					$img_success = false;
+				}
+			}
+
+			$steps[] = $this->step_result( 'image_processing', $img_success, $img_message, [
+				'found'     => $total_images,
+				'processed' => $images_processed,
+				'enabled'   => $include_images ? 'Yes' : 'No',
+			] );
+		}
+
+		// Step 6: Document processing
+		if ( $total_documents > 0 || $include_docs ) {
+			$docs_processed = $index_result['documents_processed'] ?? 0;
+			$doc_message = 'No documents found';
+			$doc_success = true;
+
+			if ( $total_documents > 0 ) {
+				if ( ! $include_docs ) {
+					$doc_message = 'Skipped (disabled in test options)';
+					$doc_success = false;
+				} elseif ( ! $can_process_docs ) {
+					$doc_message = 'Skipped (requires Professional+ plan)';
+					$doc_success = false;
+				} elseif ( $docs_processed > 0 ) {
+					$doc_message = 'Processed via text extraction';
+					$doc_success = true;
+				} else {
+					$doc_message = 'Processing failed or async';
+					$doc_success = false;
+				}
+			}
+
+			$steps[] = $this->step_result( 'document_processing', $doc_success, $doc_message, [
+				'found'     => $total_documents,
+				'processed' => $docs_processed,
+				'enabled'   => $include_docs ? 'Yes' : 'No',
+			] );
+		}
+
+		// Step 7: Storage
+		$steps[] = $this->step_result( 'storage', true, 'Embeddings stored', [
+			'mode'     => $storage_mode,
+			'location' => $storage_mode === 'local' ? 'wp_wpforo_ai_embeddings' : 'S3 Vectors (AWS)',
+		] );
+
 		return [
-			'success'      => true,
-			'topicid'      => $topicid,
-			'storage_mode' => $storage_mode,
-			'message'      => 'Topic queued for indexing',
-			'result'       => $result,
+			'success'       => true,
+			'topicid'       => $topicid,
+			'topic_title'   => $topic['title'],
+			'storage_mode'  => $storage_mode,
+			'total_time_ms' => $index_time,
+			'options_used'  => [
+				'include_images' => $include_images ? 'Yes' : 'No',
+				'include_docs'   => $include_docs ? 'Yes' : 'No',
+			],
+			'summary'       => [
+				'posts_indexed'       => $index_result['indexed_count'] ?? 0,
+				'noise_filtered'      => $index_result['noise_filtered_count'] ?? 0,
+				'images_processed'    => $index_result['images_processed'] ?? 0,
+				'documents_processed' => $index_result['documents_processed'] ?? 0,
+			],
+			'steps'        => $steps,
+		];
+	}
+
+	private function step_result( $step, $success, $message, $data = [] ) {
+		return [
+			'step'    => $step,
+			'success' => $success,
+			'message' => $message,
+			'data'    => $data,
 		];
 	}
 
