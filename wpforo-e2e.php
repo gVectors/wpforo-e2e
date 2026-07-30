@@ -687,20 +687,44 @@ class WPForo_E2E_Tester {
 		$query = sanitize_text_field( $params['query'] ?? 'test search query' );
 		$limit = intval( $params['limit'] ?? 5 );
 
-		$results = WPF()->ai_client->semantic_search( $query, $limit );
+		$raw_results = WPF()->ai_client->semantic_search( $query, $limit );
 
-		if ( is_wp_error( $results ) ) {
+		if ( is_wp_error( $raw_results ) ) {
 			return [
 				'success' => false,
-				'error'   => $results->get_error_message(),
+				'error'   => $raw_results->get_error_message(),
+			];
+		}
+
+		// Parse the nested response structure
+		$search_results = $raw_results['results'] ?? [];
+		$total = $raw_results['total'] ?? count( $search_results );
+		$query_time = $raw_results['query_time_ms'] ?? 0;
+		$credits_used = $raw_results['credits_used'] ?? 0;
+
+		// Format results for display
+		$formatted_results = [];
+		foreach ( $search_results as $result ) {
+			$formatted_results[] = [
+				'topicid'  => $result['topicid'] ?? 0,
+				'postid'   => $result['postid'] ?? 0,
+				'title'    => $result['title'] ?? '',
+				'excerpt'  => isset( $result['content'] ) ? wp_trim_words( $result['content'], 20 ) : '',
+				'score'    => $result['score'] ?? 0,
+				'url'      => $result['url'] ?? '',
 			];
 		}
 
 		return [
-			'success'       => true,
+			'success'       => $total > 0,
 			'query'         => $query,
-			'results_count' => count( $results ),
-			'results'       => $results,
+			'total_found'   => $total,
+			'query_time_ms' => $query_time,
+			'credits_used'  => $credits_used,
+			'results'       => $formatted_results,
+			'message'       => $total > 0
+				? sprintf( 'Found %d results in %dms', $total, $query_time )
+				: 'No results found for this query',
 		];
 	}
 
