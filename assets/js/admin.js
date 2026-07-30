@@ -68,6 +68,8 @@
 		$('#info-api-url').text(data.api_base_url || '-');
 		$('#info-board-id').text(data.board_id);
 		$('#storage-mode-select').val(data.storage_mode || 'local');
+		// Debug: log storage mode info
+		console.log('Storage mode debug:', data.storage_mode, data.storage_mode_debug);
 
 		if (data.subscription) {
 			$('#info-plan').text(data.subscription.plan || 'free_trial');
