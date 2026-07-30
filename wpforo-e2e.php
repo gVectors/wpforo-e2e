@@ -87,11 +87,11 @@ class WPForo_E2E_Tester {
 	public function ajax_get_tenant_info() {
 		$this->verify_request();
 
-		if ( ! function_exists( 'WPF' ) || ! WPF()->ai ) {
+		if ( ! function_exists( 'WPF' ) || ! isset( WPF()->ai_client_client ) ) {
 			wp_send_json_error( [ 'message' => 'wpForo or AI Client not available' ] );
 		}
 
-		$ai_client = WPF()->ai;
+		$ai_client = WPF()->ai_client_client;
 		$board_id = WPF()->board->get_current( 'boardid' );
 
 		// Get tenant status (force fresh)
@@ -253,7 +253,7 @@ class WPForo_E2E_Tester {
 		$test_type = sanitize_text_field( $_POST['test_type'] ?? '' );
 		$params = isset( $_POST['params'] ) ? $_POST['params'] : [];
 
-		if ( ! function_exists( 'WPF' ) || ! WPF()->ai ) {
+		if ( ! function_exists( 'WPF' ) || ! WPF()->ai_client ) {
 			wp_send_json_error( [ 'message' => 'wpForo or AI Client not available' ] );
 		}
 
@@ -324,7 +324,7 @@ class WPForo_E2E_Tester {
 	}
 
 	private function test_tenant_status() {
-		$status = WPF()->ai->get_tenant_status( true );
+		$status = WPF()->ai_client->get_tenant_status( true );
 
 		if ( is_wp_error( $status ) ) {
 			return [
@@ -343,7 +343,7 @@ class WPForo_E2E_Tester {
 		$query = sanitize_text_field( $params['query'] ?? 'test search query' );
 		$limit = intval( $params['limit'] ?? 5 );
 
-		$results = WPF()->ai->semantic_search( $query, $limit );
+		$results = WPF()->ai_client->semantic_search( $query, $limit );
 
 		if ( is_wp_error( $results ) ) {
 			return [
@@ -374,7 +374,7 @@ class WPForo_E2E_Tester {
 		$storage_mode = get_option( 'wpforo_ai_storage_mode_' . $board_id, 'local' );
 
 		// Queue the topic for indexing
-		$result = WPF()->ai->queue_topic_for_indexing( $topicid, $board_id );
+		$result = WPF()->ai_client->queue_topic_for_indexing( $topicid, $board_id );
 
 		if ( is_wp_error( $result ) ) {
 			return [
@@ -412,7 +412,7 @@ class WPForo_E2E_Tester {
 		}
 
 		// Make API call directly
-		$ai_client = WPF()->ai;
+		$ai_client = WPF()->ai_client;
 		$response = $this->call_ai_endpoint( '/translate', [
 			'content'         => wp_strip_all_tags( $post['body'] ),
 			'target_language' => $language,
@@ -534,7 +534,7 @@ class WPForo_E2E_Tester {
 	}
 
 	private function call_ai_endpoint( $endpoint, $data = [], $method = 'POST' ) {
-		$api_key = WPF()->ai->get_api_key();
+		$api_key = WPF()->ai_client->get_api_key();
 		$base_url = defined( 'WPFORO_AI_API' ) ? WPFORO_AI_API : 'https://api.gvectors.com/v1';
 
 		$url = rtrim( $base_url, '/' ) . $endpoint;
