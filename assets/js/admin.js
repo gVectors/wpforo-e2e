@@ -492,7 +492,7 @@
 			if (row.changes) {
 				var parts = [];
 				if (row.changes.results_diff !== 0) {
-					parts.push(changeTag(row.changes.results_diff, 'results'));
+					parts.push(changeTag(row.changes.results_diff, 'res'));
 				}
 				if (row.changes.avg_score_diff !== 0) {
 					parts.push(changeTag(row.changes.avg_score_diff, 'avg'));
@@ -503,6 +503,10 @@
 				changesHtml = parts.length ? parts.join(' ') : '<span class="e2e-change neutral">same</span>';
 			}
 
+			var enhancedHtml = row.has_enhancement == 1
+				? '<span class="e2e-enhanced-yes">Yes</span>'
+				: '<span class="e2e-enhanced-no">No</span>';
+
 			html += '<tr data-row-id="' + row.id + '">';
 			html += '<td>' + formatDate(row.created_at) + '</td>';
 			html += '<td class="query-cell" title="' + escapeHtml(row.query) + '">' + escapeHtml(row.query) + '</td>';
@@ -510,13 +514,16 @@
 			html += '<td>' + row.query_time_ms + 'ms</td>';
 			html += '<td>' + row.avg_score + '%</td>';
 			html += '<td>' + row.top_score + '%</td>';
-			html += '<td>' + row.storage_mode + '</td>';
+			html += '<td>' + enhancedHtml + '</td>';
 			html += '<td>' + changesHtml + '</td>';
-			html += '<td><span class="e2e-expand-btn" data-idx="' + idx + '">Details</span></td>';
+			html += '<td>';
+			html += '<span class="e2e-expand-btn" data-idx="' + idx + '">Details</span>';
+			html += '<span class="e2e-delete-btn" data-id="' + row.id + '">Delete</span>';
+			html += '</td>';
 			html += '</tr>';
 
 			html += '<tr class="e2e-history-row-details" id="details-row-' + idx + '" style="display:none;">';
-			html += '<td colspan="9"><strong>Results:</strong><pre>' + syntaxHighlight(JSON.stringify(row.results_json, null, 2)) + '</pre></td>';
+			html += '<td colspan="9"><strong>Results & Enhancement:</strong><pre>' + syntaxHighlight(JSON.stringify(row.results_json, null, 2)) + '</pre></td>';
 			html += '</tr>';
 		});
 
@@ -527,6 +534,11 @@
 			var $row = $('#details-row-' + idx);
 			$row.toggle();
 			$(this).text($row.is(':visible') ? 'Hide' : 'Details');
+		});
+
+		$tbody.find('.e2e-delete-btn').on('click', function() {
+			var id = $(this).data('id');
+			deleteSearchTest(id);
 		});
 	}
 
@@ -550,6 +562,21 @@
 			data: {
 				action: 'wpforo_e2e_clear_search_history',
 				nonce: wpforoE2E.nonce
+			},
+			success: function() {
+				loadSearchHistory();
+			}
+		});
+	}
+
+	function deleteSearchTest(id) {
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_delete_search_test',
+				nonce: wpforoE2E.nonce,
+				id: id
 			},
 			success: function() {
 				loadSearchHistory();

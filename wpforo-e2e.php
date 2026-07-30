@@ -42,6 +42,7 @@ class WPForo_E2E_Tester {
 		add_action( 'wp_ajax_wpforo_e2e_get_feature_info', [ $this, 'ajax_get_feature_info' ] );
 		add_action( 'wp_ajax_wpforo_e2e_get_search_history', [ $this, 'ajax_get_search_history' ] );
 		add_action( 'wp_ajax_wpforo_e2e_clear_search_history', [ $this, 'ajax_clear_search_history' ] );
+		add_action( 'wp_ajax_wpforo_e2e_delete_search_test', [ $this, 'ajax_delete_search_test' ] );
 
 		// Create table on init if not exists
 		$this->maybe_create_table();
@@ -894,6 +895,7 @@ class WPForo_E2E_Tester {
 		$top_score = count( $scores ) > 0 ? max( $scores ) : 0;
 
 		// Save to history table
+		$has_valid_enhancement = $enhancement && ! isset( $enhancement['error'] ) && ! isset( $enhancement['skipped'] ) && ! isset( $enhancement['disabled'] );
 		$this->save_search_test( [
 			'query'           => $query,
 			'storage_mode'    => $storage_mode,
@@ -902,8 +904,9 @@ class WPForo_E2E_Tester {
 			'credits_used'    => $credits_used + $enhance_credits,
 			'avg_score'       => $avg_score,
 			'top_score'       => $top_score,
-			'has_enhancement' => $enhancement && ! isset( $enhancement['error'] ) && ! isset( $enhancement['skipped'] ) && ! isset( $enhancement['disabled'] ) ? 1 : 0,
+			'has_enhancement' => $has_valid_enhancement ? 1 : 0,
 			'results'         => $enriched_results,
+			'enhancement'     => $has_valid_enhancement ? $enhancement : null,
 			'settings'        => [
 				'storage_mode'    => $storage_mode,
 				'min_score'       => $min_score_percent,
@@ -935,6 +938,11 @@ class WPForo_E2E_Tester {
 	private function save_search_test( $data ) {
 		global $wpdb;
 
+		$results_data = [
+			'results'     => $data['results'],
+			'enhancement' => $data['enhancement'] ?? null,
+		];
+
 		$wpdb->insert(
 			$this->table_name,
 			[
@@ -946,7 +954,7 @@ class WPForo_E2E_Tester {
 				'avg_score'       => $data['avg_score'],
 				'top_score'       => $data['top_score'],
 				'has_enhancement' => $data['has_enhancement'],
-				'results_json'    => json_encode( $data['results'] ),
+				'results_json'    => json_encode( $results_data ),
 				'settings_json'   => json_encode( $data['settings'] ),
 				'created_at'      => current_time( 'mysql' ),
 			],
@@ -1007,6 +1015,19 @@ class WPForo_E2E_Tester {
 		$wpdb->query( "TRUNCATE TABLE {$this->table_name}" );
 
 		wp_send_json_success( [ 'message' => 'History cleared' ] );
+	}
+
+	public function ajax_delete_search_test() {
+		$this->verify_request();
+
+		global $wpdb;
+		$id = intval( $_POST['id'] ?? 0 );
+
+		if ( $id > 0 ) {
+			$wpdb->delete( $this->table_name, [ 'id' => $id ], [ '%d' ] );
+		}
+
+		wp_send_json_success( [ 'message' => 'Deleted' ] );
 	}
 
 	private function test_index_topic( $params ) {

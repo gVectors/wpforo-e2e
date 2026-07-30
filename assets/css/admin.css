@@ -449,3 +449,30 @@
 .e2e-history-row-details td {
 	padding: 15px;
 }
+
+.e2e-history-row-details pre {
+	white-space: pre-wrap;
+	word-break: break-word;
+	max-width: 100%;
+	overflow-x: hidden;
+}
+
+.e2e-delete-btn {
+	color: #d63638;
+	cursor: pointer;
+	font-size: 12px;
+	margin-left: 8px;
+}
+
+.e2e-delete-btn:hover {
+	text-decoration: underline;
+}
+
+.e2e-enhanced-yes {
+	color: #00a32a;
+	font-weight: 600;
+}
+
+.e2e-enhanced-no {
+	color: #999;
+}

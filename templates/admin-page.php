@@ -128,11 +128,11 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 									<th>Query</th>
 									<th>Results</th>
 									<th>Time</th>
-									<th>Avg Score</th>
-									<th>Top Score</th>
-									<th>Mode</th>
+									<th>Avg</th>
+									<th>Top</th>
+									<th>Enhanced</th>
 									<th>Changes</th>
-									<th></th>
+									<th>Actions</th>
 								</tr>
 							</thead>
 							<tbody id="search-history-body">
