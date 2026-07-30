@@ -36,6 +36,11 @@
 
 		// Load feature info for this tab
 		loadFeatureInfo(tab);
+
+		// Load search history when search tab is shown
+		if (tab === 'search') {
+			loadSearchHistory();
+		}
 	}
 
 	function loadFeatureInfo(tab) {
@@ -167,6 +172,8 @@
 		$('#load-topics').on('click', loadTopics);
 		$('#filter-attachments').on('change', loadTopics);
 		$('.e2e-run-test').on('click', runTest);
+		$('#refresh-search-history').on('click', loadSearchHistory);
+		$('#clear-search-history').on('click', clearSearchHistory);
 	}
 
 	function loadTenantInfo() {
@@ -448,6 +455,105 @@
 				cls = 'json-null';
 			}
 			return '<span class="' + cls + '">' + match + '</span>';
+		});
+	}
+
+	function loadSearchHistory() {
+		var $tbody = $('#search-history-body');
+		$tbody.html('<tr><td colspan="9" class="e2e-loading">Loading...</td></tr>');
+
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_get_search_history',
+				nonce: wpforoE2E.nonce,
+				limit: 50
+			},
+			success: function(response) {
+				if (response.success && response.data.length) {
+					renderSearchHistory(response.data);
+				} else {
+					$tbody.html('<tr><td colspan="9" style="text-align:center;color:#666;">No test history yet. Run a search test to start tracking.</td></tr>');
+				}
+			},
+			error: function() {
+				$tbody.html('<tr><td colspan="9" class="e2e-loading">Error loading history</td></tr>');
+			}
+		});
+	}
+
+	function renderSearchHistory(data) {
+		var $tbody = $('#search-history-body');
+		var html = '';
+
+		data.forEach(function(row, idx) {
+			var changesHtml = '-';
+			if (row.changes) {
+				var parts = [];
+				if (row.changes.results_diff !== 0) {
+					parts.push(changeTag(row.changes.results_diff, 'results'));
+				}
+				if (row.changes.avg_score_diff !== 0) {
+					parts.push(changeTag(row.changes.avg_score_diff, 'avg'));
+				}
+				if (row.changes.time_diff !== 0) {
+					parts.push(changeTag(-row.changes.time_diff, 'ms', true));
+				}
+				changesHtml = parts.length ? parts.join(' ') : '<span class="e2e-change neutral">same</span>';
+			}
+
+			html += '<tr data-row-id="' + row.id + '">';
+			html += '<td>' + formatDate(row.created_at) + '</td>';
+			html += '<td class="query-cell" title="' + escapeHtml(row.query) + '">' + escapeHtml(row.query) + '</td>';
+			html += '<td>' + row.total_results + '</td>';
+			html += '<td>' + row.query_time_ms + 'ms</td>';
+			html += '<td>' + row.avg_score + '%</td>';
+			html += '<td>' + row.top_score + '%</td>';
+			html += '<td>' + row.storage_mode + '</td>';
+			html += '<td>' + changesHtml + '</td>';
+			html += '<td><span class="e2e-expand-btn" data-idx="' + idx + '">Details</span></td>';
+			html += '</tr>';
+
+			html += '<tr class="e2e-history-row-details" id="details-row-' + idx + '" style="display:none;">';
+			html += '<td colspan="9"><strong>Results:</strong><pre>' + syntaxHighlight(JSON.stringify(row.results_json, null, 2)) + '</pre></td>';
+			html += '</tr>';
+		});
+
+		$tbody.html(html);
+
+		$tbody.find('.e2e-expand-btn').on('click', function() {
+			var idx = $(this).data('idx');
+			var $row = $('#details-row-' + idx);
+			$row.toggle();
+			$(this).text($row.is(':visible') ? 'Hide' : 'Details');
+		});
+	}
+
+	function changeTag(diff, label, invert) {
+		var cls = diff > 0 ? (invert ? 'negative' : 'positive') : (diff < 0 ? (invert ? 'positive' : 'negative') : 'neutral');
+		var prefix = diff > 0 ? '+' : '';
+		return '<span class="e2e-change ' + cls + '">' + prefix + diff + ' ' + label + '</span>';
+	}
+
+	function formatDate(str) {
+		var d = new Date(str);
+		return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+	}
+
+	function clearSearchHistory() {
+		if (!confirm('Clear all search test history?')) return;
+
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_clear_search_history',
+				nonce: wpforoE2E.nonce
+			},
+			success: function() {
+				loadSearchHistory();
+			}
 		});
 	}
 

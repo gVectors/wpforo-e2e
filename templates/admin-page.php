@@ -112,6 +112,35 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 				</div>
 
 				<div class="e2e-result-box" id="result-search"></div>
+
+				<!-- Search History -->
+				<div class="e2e-history-section">
+					<h3>
+						Test History
+						<button type="button" class="button button-small" id="refresh-search-history">Refresh</button>
+						<button type="button" class="button button-small" id="clear-search-history">Clear All</button>
+					</h3>
+					<div class="e2e-history-table-wrap">
+						<table class="e2e-history-table" id="search-history-table">
+							<thead>
+								<tr>
+									<th>Date</th>
+									<th>Query</th>
+									<th>Results</th>
+									<th>Time</th>
+									<th>Avg Score</th>
+									<th>Top Score</th>
+									<th>Mode</th>
+									<th>Changes</th>
+									<th></th>
+								</tr>
+							</thead>
+							<tbody id="search-history-body">
+								<tr><td colspan="9" class="e2e-loading">Loading history...</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
 			</div>
 		</div>
 

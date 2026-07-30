@@ -20,6 +20,7 @@ define( 'WPFORO_E2E_URL', plugin_dir_url( __FILE__ ) );
 class WPForo_E2E_Tester {
 
 	private static $instance = null;
+	private $table_name;
 
 	public static function instance() {
 		if ( self::$instance === null ) {
@@ -29,6 +30,9 @@ class WPForo_E2E_Tester {
 	}
 
 	public function __construct() {
+		global $wpdb;
+		$this->table_name = $wpdb->prefix . 'wpforo_ai_e2e_search_tests';
+
 		add_action( 'admin_menu', [ $this, 'add_admin_menu' ] );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_admin_assets' ] );
 		add_action( 'wp_ajax_wpforo_e2e_run_test', [ $this, 'ajax_run_test' ] );
@@ -36,6 +40,48 @@ class WPForo_E2E_Tester {
 		add_action( 'wp_ajax_wpforo_e2e_get_tenant_info', [ $this, 'ajax_get_tenant_info' ] );
 		add_action( 'wp_ajax_wpforo_e2e_switch_storage', [ $this, 'ajax_switch_storage' ] );
 		add_action( 'wp_ajax_wpforo_e2e_get_feature_info', [ $this, 'ajax_get_feature_info' ] );
+		add_action( 'wp_ajax_wpforo_e2e_get_search_history', [ $this, 'ajax_get_search_history' ] );
+		add_action( 'wp_ajax_wpforo_e2e_clear_search_history', [ $this, 'ajax_clear_search_history' ] );
+
+		// Create table on init if not exists
+		$this->maybe_create_table();
+	}
+
+	private function maybe_create_table() {
+		global $wpdb;
+
+		$table = $this->table_name;
+		if ( $wpdb->get_var( "SHOW TABLES LIKE '$table'" ) !== $table ) {
+			$this->create_table();
+		}
+	}
+
+	public function create_table() {
+		global $wpdb;
+
+		$charset_collate = $wpdb->get_charset_collate();
+		$table = $this->table_name;
+
+		$sql = "CREATE TABLE $table (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			query VARCHAR(255) NOT NULL,
+			storage_mode VARCHAR(20) NOT NULL,
+			total_results INT NOT NULL DEFAULT 0,
+			query_time_ms INT NOT NULL DEFAULT 0,
+			credits_used INT NOT NULL DEFAULT 0,
+			avg_score DECIMAL(5,2) DEFAULT NULL,
+			top_score DECIMAL(5,2) DEFAULT NULL,
+			has_enhancement TINYINT(1) NOT NULL DEFAULT 0,
+			results_json LONGTEXT,
+			settings_json TEXT,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY query_idx (query),
+			KEY created_at_idx (created_at)
+		) $charset_collate;";
+
+		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+		dbDelta( $sql );
 	}
 
 	public function add_admin_menu() {
@@ -842,6 +888,29 @@ class WPForo_E2E_Tester {
 			];
 		}
 
+		// Calculate scores for history
+		$scores = array_map( fn($r) => intval( $r['score'] ), $enriched_results );
+		$avg_score = count( $scores ) > 0 ? round( array_sum( $scores ) / count( $scores ), 2 ) : 0;
+		$top_score = count( $scores ) > 0 ? max( $scores ) : 0;
+
+		// Save to history table
+		$this->save_search_test( [
+			'query'           => $query,
+			'storage_mode'    => $storage_mode,
+			'total_results'   => count( $enriched_results ),
+			'query_time_ms'   => $query_time,
+			'credits_used'    => $credits_used + $enhance_credits,
+			'avg_score'       => $avg_score,
+			'top_score'       => $top_score,
+			'has_enhancement' => $enhancement && ! isset( $enhancement['error'] ) && ! isset( $enhancement['skipped'] ) && ! isset( $enhancement['disabled'] ) ? 1 : 0,
+			'results'         => $enriched_results,
+			'settings'        => [
+				'storage_mode'    => $storage_mode,
+				'min_score'       => $min_score_percent,
+				'enhance_enabled' => $enhance_enabled,
+			],
+		] );
+
 		return [
 			'success'       => count( $enriched_results ) > 0,
 			'query'         => $query,
@@ -861,6 +930,83 @@ class WPForo_E2E_Tester {
 				'embedding_count'  => $embedding_count,
 			],
 		];
+	}
+
+	private function save_search_test( $data ) {
+		global $wpdb;
+
+		$wpdb->insert(
+			$this->table_name,
+			[
+				'query'           => $data['query'],
+				'storage_mode'    => $data['storage_mode'],
+				'total_results'   => $data['total_results'],
+				'query_time_ms'   => $data['query_time_ms'],
+				'credits_used'    => $data['credits_used'],
+				'avg_score'       => $data['avg_score'],
+				'top_score'       => $data['top_score'],
+				'has_enhancement' => $data['has_enhancement'],
+				'results_json'    => json_encode( $data['results'] ),
+				'settings_json'   => json_encode( $data['settings'] ),
+				'created_at'      => current_time( 'mysql' ),
+			],
+			[ '%s', '%s', '%d', '%d', '%d', '%f', '%f', '%d', '%s', '%s', '%s' ]
+		);
+	}
+
+	public function ajax_get_search_history() {
+		$this->verify_request();
+
+		global $wpdb;
+
+		$query_filter = sanitize_text_field( $_POST['query'] ?? '' );
+		$limit = intval( $_POST['limit'] ?? 50 );
+
+		$sql = "SELECT * FROM {$this->table_name}";
+		if ( $query_filter ) {
+			$sql .= $wpdb->prepare( " WHERE query = %s", $query_filter );
+		}
+		$sql .= " ORDER BY created_at DESC LIMIT %d";
+		$sql = $wpdb->prepare( $sql, $limit );
+
+		$results = $wpdb->get_results( $sql, ARRAY_A );
+
+		// Calculate changes compared to previous test of same query
+		$processed = [];
+		$prev_by_query = [];
+
+		foreach ( array_reverse( $results ) as $row ) {
+			$q = $row['query'];
+			$row['results_json'] = json_decode( $row['results_json'], true );
+			$row['settings_json'] = json_decode( $row['settings_json'], true );
+
+			// Calculate changes
+			if ( isset( $prev_by_query[ $q ] ) ) {
+				$prev = $prev_by_query[ $q ];
+				$row['changes'] = [
+					'results_diff'    => $row['total_results'] - $prev['total_results'],
+					'time_diff'       => $row['query_time_ms'] - $prev['query_time_ms'],
+					'avg_score_diff'  => round( $row['avg_score'] - $prev['avg_score'], 2 ),
+					'top_score_diff'  => round( $row['top_score'] - $prev['top_score'], 2 ),
+				];
+			} else {
+				$row['changes'] = null;
+			}
+
+			$prev_by_query[ $q ] = $row;
+			$processed[] = $row;
+		}
+
+		wp_send_json_success( array_reverse( $processed ) );
+	}
+
+	public function ajax_clear_search_history() {
+		$this->verify_request();
+
+		global $wpdb;
+		$wpdb->query( "TRUNCATE TABLE {$this->table_name}" );
+
+		wp_send_json_success( [ 'message' => 'History cleared' ] );
 	}
 
 	private function test_index_topic( $params ) {
