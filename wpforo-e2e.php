@@ -115,7 +115,12 @@ class WPForo_E2E_Tester {
 		// Get stored values
 		$tenant_id = $ai_client->get_tenant_id();
 		$api_key = $ai_client->get_api_key();
-		$storage_mode = get_option( 'wpforo_ai_storage_mode_' . $board_id, 'local' );
+
+		// Get storage mode from VectorStorageManager (the authoritative source)
+		$storage_mode = 'local';
+		if ( isset( WPF()->vector_storage ) ) {
+			$storage_mode = WPF()->vector_storage->get_storage_mode( $board_id );
+		}
 
 		$info = [
 			'connected'      => $ai_client->is_connected(),
