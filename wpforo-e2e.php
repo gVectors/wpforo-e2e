@@ -87,11 +87,26 @@ class WPForo_E2E_Tester {
 	public function ajax_get_tenant_info() {
 		$this->verify_request();
 
-		if ( ! function_exists( 'WPF' ) || ! isset( WPF()->ai_client_client ) ) {
-			wp_send_json_error( [ 'message' => 'wpForo or AI Client not available' ] );
+		// Debug: check what's available
+		if ( ! function_exists( 'WPF' ) ) {
+			wp_send_json_error( [ 'message' => 'WPF() function not defined - is wpForo active?' ] );
 		}
 
-		$ai_client = WPF()->ai_client_client;
+		$wpf = WPF();
+		if ( ! is_object( $wpf ) ) {
+			wp_send_json_error( [ 'message' => 'WPF() returned: ' . gettype( $wpf ) ] );
+		}
+
+		if ( ! isset( $wpf->ai_client ) || ! $wpf->ai_client ) {
+			$props = array_keys( get_object_vars( $wpf ) );
+			wp_send_json_error( [
+				'message'    => 'ai_client property not set on WPF()',
+				'wpf_class'  => get_class( $wpf ),
+				'properties' => implode( ', ', array_slice( $props, 0, 20 ) ),
+			] );
+		}
+
+		$ai_client = $wpf->ai_client;
 		$board_id = WPF()->board->get_current( 'boardid' );
 
 		// Get tenant status (force fresh)
