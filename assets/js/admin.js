@@ -121,11 +121,11 @@
 
 		html += '<h4>Settings</h4>';
 		html += '<div class="e2e-info-grid-sm">';
-		html += infoItem('Quality', settings.search_quality);
-		html += infoItem('Min Score', settings.search_min_score + '%');
-		html += infoItem('Enhance', settings.search_enhance ? 'On' : 'Off', settings.search_enhance ? 'success' : '');
-		html += infoItem('Enhance Quality', settings.search_enhance_quality);
-		html += infoItem('Language', settings.search_language || 'Auto');
+		html += infoItem('Re-ranking Model', settings.search_quality);
+		html += infoItem('Min Score Threshold', settings.search_min_score + '%');
+		html += infoItem('AI Summary', settings.search_enhance ? 'On' : 'Off', settings.search_enhance ? 'success' : '');
+		html += infoItem('Summary Model', settings.search_enhance_quality);
+		html += infoItem('Response Language', settings.search_language || 'Auto');
 		html += infoItem('Max Results', settings.search_max_results);
 		html += '</div>';
 
