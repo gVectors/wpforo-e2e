@@ -91,22 +91,23 @@
 		var settings = data.settings || {};
 		var suggestions = data.suggestions || [];
 
-		var html = '<h4>Database Status</h4>';
+		var html = '<h4>Embeddings Database (wp_wpforo_ai_embeddings)</h4>';
 		html += '<div class="e2e-info-grid-sm">';
-		html += infoItem('Total Rows', db.total_rows || 0);
-		html += infoItem('Unique Topics', db.unique_topics || 0);
-		html += infoItem('Unique Posts', db.unique_posts || 0);
-		html += infoItem('Table Size', (db.table_size_mb || 0) + ' MB');
+		html += infoItem('Total Embeddings', db.total_rows || 0);
+		html += infoItem('Indexed Topics', db.unique_topics || 0);
+		html += infoItem('Indexed Posts', db.unique_posts || 0);
+		html += infoItem('DB Size', (db.table_size_mb || 0) + ' MB');
 		html += infoItem('Storage Mode', data.storage_mode || 'local', data.storage_mode === 'local' ? 'success' : '');
 		html += infoItem('Last Indexed', db.last_indexed || 'Never');
 		html += '</div>';
 
 		// Content types breakdown
 		if (db.by_type && db.by_type.length) {
-			html += '<h4>Content Types</h4>';
+			html += '<h4>Indexed Content by Type</h4>';
 			html += '<div class="e2e-info-grid-sm">';
 			db.by_type.forEach(function(t) {
-				html += infoItem(t.content_type, t.count);
+				var label = t.content_type === 'forum' ? 'Forum Posts' : t.content_type;
+				html += infoItem(label, t.count + ' embeddings');
 			});
 			html += '</div>';
 		}
