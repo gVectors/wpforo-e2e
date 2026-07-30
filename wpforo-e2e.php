@@ -327,22 +327,37 @@ class WPForo_E2E_Tester {
 			$storage_mode = WPF()->vector_storage->get_storage_mode( $board_id );
 		}
 
-		// Get sample indexed content for suggestions
+		// Get sample indexed content for suggestions - from actual embedded content
 		$suggestions = [];
 		if ( isset( WPF()->tables->ai_embeddings ) ) {
-			$samples = $wpdb->get_results(
-				"SELECT DISTINCT t.title
-				 FROM {$wpdb->prefix}wpforo_topics t
-				 INNER JOIN " . WPF()->tables->ai_embeddings . " e ON t.topicid = e.topicid
-				 WHERE e.topicid > 0
-				 ORDER BY RAND()
-				 LIMIT 5",
+			$emb_table = WPF()->tables->ai_embeddings;
+
+			// Get recent indexed topics with their titles
+			$indexed_topics = $wpdb->get_results(
+				"SELECT DISTINCT t.topicid, t.title, e.updated_at
+				 FROM {$topics_table} t
+				 INNER JOIN {$emb_table} e ON t.topicid = e.topicid
+				 WHERE e.topicid > 0 AND t.status = 0 AND t.private = 0
+				 ORDER BY e.updated_at DESC
+				 LIMIT 10",
 				ARRAY_A
 			);
-			foreach ( $samples as $s ) {
-				// Extract key phrases from titles
-				$title = $s['title'];
-				$suggestions[] = $this->extract_search_phrase( $title );
+
+			// Extract meaningful phrases from indexed topic titles
+			$seen = [];
+			foreach ( $indexed_topics as $topic ) {
+				$phrases = $this->extract_search_phrases( $topic['title'] );
+				foreach ( $phrases as $phrase ) {
+					if ( ! isset( $seen[ $phrase ] ) && strlen( $phrase ) > 3 ) {
+						$suggestions[] = [
+							'phrase'  => $phrase,
+							'topicid' => $topic['topicid'],
+							'title'   => $topic['title'],
+						];
+						$seen[ $phrase ] = true;
+						if ( count( $suggestions ) >= 6 ) break 2;
+					}
+				}
 			}
 		}
 
@@ -354,17 +369,37 @@ class WPForo_E2E_Tester {
 		];
 	}
 
-	private function extract_search_phrase( $title ) {
-		// Remove common words and extract meaningful phrase
-		$title = strtolower( $title );
-		$stop_words = [ 'how', 'to', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'why', 'when', 'where', 'which', 'who', 'in', 'on', 'at', 'for', 'with', 'and', 'or', 'but', 'not', 'this', 'that', 'these', 'those', 'i', 'you', 'we', 'they', 'it', 'can', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'my', 'your', 'our', 'their' ];
+	private function extract_search_phrases( $title ) {
+		// Remove common words and extract meaningful phrases
+		$title = strtolower( trim( $title ) );
+		$title = preg_replace( '/[^\w\s]/', ' ', $title ); // Remove punctuation
+		$stop_words = [ 'how', 'to', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'why', 'when', 'where', 'which', 'who', 'in', 'on', 'at', 'for', 'with', 'and', 'or', 'but', 'not', 'this', 'that', 'these', 'those', 'i', 'you', 'we', 'they', 'it', 'can', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'my', 'your', 'our', 'their', 'have', 'has', 'had', 'been', 'being', 'get', 'got', 'any', 'some' ];
 
 		$words = preg_split( '/\s+/', $title );
-		$meaningful = array_filter( $words, function( $w ) use ( $stop_words ) {
+		$meaningful = array_values( array_filter( $words, function( $w ) use ( $stop_words ) {
 			return strlen( $w ) > 2 && ! in_array( $w, $stop_words );
-		} );
+		} ) );
 
-		return implode( ' ', array_slice( $meaningful, 0, 3 ) );
+		$phrases = [];
+
+		// Single important words (nouns/verbs likely)
+		foreach ( array_slice( $meaningful, 0, 2 ) as $word ) {
+			if ( strlen( $word ) > 4 ) {
+				$phrases[] = $word;
+			}
+		}
+
+		// Two-word phrases
+		if ( count( $meaningful ) >= 2 ) {
+			$phrases[] = $meaningful[0] . ' ' . $meaningful[1];
+		}
+
+		// Three-word phrase
+		if ( count( $meaningful ) >= 3 ) {
+			$phrases[] = implode( ' ', array_slice( $meaningful, 0, 3 ) );
+		}
+
+		return array_unique( $phrases );
 	}
 
 	private function get_index_info() {

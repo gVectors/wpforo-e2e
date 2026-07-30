@@ -131,12 +131,12 @@
 
 		$('#search-info').html(html);
 
-		// Render suggestions
+		// Render suggestions from indexed content
 		if (suggestions.length) {
-			var sugHtml = '<div class="suggestion-label">Try searching for:</div>';
+			var sugHtml = '<div class="suggestion-label">Try searching (from indexed topics):</div>';
 			suggestions.forEach(function(s) {
-				if (s) {
-					sugHtml += '<span class="e2e-suggestion-btn" data-query="' + escapeHtml(s) + '">' + escapeHtml(s) + '</span>';
+				if (s && s.phrase) {
+					sugHtml += '<span class="e2e-suggestion-btn" data-query="' + escapeHtml(s.phrase) + '" title="From: ' + escapeHtml(s.title) + '">' + escapeHtml(s.phrase) + '</span>';
 				}
 			});
 			$('#search-suggestions').html(sugHtml);
@@ -145,6 +145,8 @@
 			$('.e2e-suggestion-btn').off('click').on('click', function() {
 				$('#search-query').val($(this).data('query'));
 			});
+		} else {
+			$('#search-suggestions').html('<div class="suggestion-label" style="color:#d63638;">No indexed content found. Index some topics first.</div>');
 		}
 	}
 
