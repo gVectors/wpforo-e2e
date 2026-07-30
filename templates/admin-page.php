@@ -31,7 +31,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 				<span class="label">Board ID:</span>
 				<span class="value" id="info-board-id">-</span>
 			</div>
-			<div class="e2e-info-item">
+			<div class="e2e-info-item" id="storage-mode-item">
 				<span class="label">Storage Mode:</span>
 				<span class="value">
 					<select id="storage-mode-select">
@@ -40,6 +40,10 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 					</select>
 					<button type="button" class="button button-small" id="save-storage-mode">Save</button>
 				</span>
+			</div>
+			<div class="e2e-info-item e2e-warning-item" id="storage-mode-warning" style="display:none;">
+				<span class="label">Warning:</span>
+				<span class="value" id="storage-mode-warning-text"></span>
 			</div>
 			<div class="e2e-info-item">
 				<span class="label">Subscription Plan:</span>

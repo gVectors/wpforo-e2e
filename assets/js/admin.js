@@ -72,12 +72,17 @@
 		console.log('Storage mode debug:', data.storage_mode, data.storage_mode_debug);
 
 		// Show warning if cloud not available but setting is cloud
+		$('.e2e-mode-warning').remove(); // Clean up old inline warnings
 		if (data.mode_warning) {
-			$('#storage-mode-select').after('<div class="e2e-mode-warning" style="color:#d63638;font-size:12px;margin-top:5px;">' + data.mode_warning + '</div>');
+			$('#storage-mode-warning-text').text(data.mode_warning);
+			$('#storage-mode-warning').show();
+		} else {
+			$('#storage-mode-warning').hide();
 		}
+
 		// Disable cloud option if not available
 		if (!data.cloud_available) {
-			$('#storage-mode-select option[value="cloud"]').prop('disabled', true).text('Cloud (requires Business plan)');
+			$('#storage-mode-select option[value="cloud"]').prop('disabled', true).text('Cloud (Business+)');
 		}
 
 		if (data.subscription) {
