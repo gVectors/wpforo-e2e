@@ -93,12 +93,19 @@
 
 		var html = '<h4>Embeddings Table: wp_wpforo_ai_embeddings</h4>';
 		html += '<div class="e2e-info-grid-sm">';
-		html += infoItem('Embedding Rows', db.total_rows || 0);
-		html += infoItem('Topics with Embeddings', db.unique_topics || 0);
-		html += infoItem('Posts with Embeddings', db.unique_posts || 0);
+		html += infoItem('Total Embedding Rows', db.total_rows || 0);
 		html += infoItem('Table Size', (db.table_size_mb || 0) + ' MB');
-		html += infoItem('Storage Mode', data.storage_mode || 'local', data.storage_mode === 'local' ? 'success' : '');
 		html += infoItem('Last Updated', db.last_indexed || 'Never');
+		html += '</div>';
+
+		html += '<h4>Topics Indexing Status</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('Forum Topics (public)', db.total_forum_topics || 0);
+		html += infoItem('Topics Marked Indexed', db.topics_marked_indexed || 0, 'success');
+		html += infoItem('Topics with Embeddings', db.topics_with_embeddings || 0);
+		html += infoItem('Posts with Embeddings', db.posts_with_embeddings || 0);
+		html += infoItem('Orphaned Embeddings', db.orphaned_topic_embeddings || 0, db.orphaned_topic_embeddings > 0 ? 'warning' : '');
+		html += infoItem('Storage Mode', data.storage_mode || 'local', data.storage_mode === 'local' ? 'success' : '');
 		html += '</div>';
 
 		// Content types breakdown

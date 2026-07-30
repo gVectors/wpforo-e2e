@@ -248,13 +248,14 @@ class WPForo_E2E_Tester {
 
 		$board_id = WPF()->board->get_current( 'boardid' );
 		$ai_settings = WPF()->settings->ai ?? [];
+		$topics_table = $wpdb->prefix . 'wpforo_topics';
 
 		// Get database stats
 		$db_stats = [];
 		if ( isset( WPF()->tables->ai_embeddings ) ) {
 			$table = WPF()->tables->ai_embeddings;
 
-			// Total rows
+			// Total embedding rows
 			$db_stats['total_rows'] = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
 
 			// By content type
@@ -263,9 +264,37 @@ class WPForo_E2E_Tester {
 				ARRAY_A
 			);
 
-			// Unique topics/posts
-			$db_stats['unique_topics'] = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT topicid) FROM {$table} WHERE topicid > 0" );
-			$db_stats['unique_posts'] = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT postid) FROM {$table} WHERE postid > 0" );
+			// Topics with embeddings (that still exist in forum for current board)
+			$db_stats['topics_with_embeddings'] = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(DISTINCT e.topicid)
+				 FROM {$table} e
+				 INNER JOIN {$topics_table} t ON e.topicid = t.topicid
+				 WHERE e.topicid > 0 AND t.status = 0 AND t.private = 0",
+				$board_id
+			) );
+
+			// Total valid topics in forum (current board)
+			$db_stats['total_forum_topics'] = (int) $wpdb->get_var(
+				"SELECT COUNT(*) FROM {$topics_table} WHERE status = 0 AND private = 0"
+			);
+
+			// Orphaned embeddings (topicid doesn't exist in forum anymore)
+			$db_stats['orphaned_topic_embeddings'] = (int) $wpdb->get_var(
+				"SELECT COUNT(DISTINCT e.topicid)
+				 FROM {$table} e
+				 LEFT JOIN {$topics_table} t ON e.topicid = t.topicid
+				 WHERE e.topicid > 0 AND t.topicid IS NULL"
+			);
+
+			// All unique topicids in embeddings (for debugging)
+			$db_stats['all_topicids_in_embeddings'] = (int) $wpdb->get_var(
+				"SELECT COUNT(DISTINCT topicid) FROM {$table} WHERE topicid > 0"
+			);
+
+			// Unique posts with embeddings
+			$db_stats['posts_with_embeddings'] = (int) $wpdb->get_var(
+				"SELECT COUNT(DISTINCT postid) FROM {$table} WHERE postid > 0"
+			);
 
 			// Table size
 			$table_status = $wpdb->get_row( $wpdb->prepare( "SHOW TABLE STATUS WHERE Name = %s", $table ) );
@@ -275,6 +304,11 @@ class WPForo_E2E_Tester {
 
 			// Last indexed
 			$db_stats['last_indexed'] = $wpdb->get_var( "SELECT MAX(updated_at) FROM {$table}" );
+
+			// Check wpforo_topics.local column (indexed flag)
+			$db_stats['topics_marked_indexed'] = (int) $wpdb->get_var(
+				"SELECT COUNT(*) FROM {$topics_table} WHERE `local` = 1"
+			);
 		}
 
 		// Get search settings
