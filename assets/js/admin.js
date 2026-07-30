@@ -15,6 +15,9 @@
 		var hash = window.location.hash.replace('#', '');
 		if (hash && $('.e2e-tab-btn[data-tab="' + hash + '"]').length) {
 			switchTab(hash);
+		} else {
+			// Load info tab by default
+			loadFeatureInfo('info');
 		}
 
 		// Tab click handler
@@ -30,6 +33,120 @@
 		$('.e2e-tab-btn[data-tab="' + tab + '"]').addClass('active');
 		$('.e2e-tab-content').removeClass('active');
 		$('.e2e-tab-content[data-tab="' + tab + '"]').addClass('active');
+
+		// Load feature info for this tab
+		loadFeatureInfo(tab);
+	}
+
+	function loadFeatureInfo(tab) {
+		var featureMap = {
+			'search': 'search',
+			'index': 'index',
+			'translate': 'translate',
+			'summarize': 'summarize',
+			'suggestions': 'suggestions',
+			'moderate': 'moderate',
+			'chat': 'chat'
+		};
+
+		var feature = featureMap[tab];
+		if (!feature) return;
+
+		var $infoBox = $('#' + tab + '-info');
+		if (!$infoBox.length || $infoBox.data('loaded')) return;
+
+		$infoBox.html('<div class="e2e-info-loading">Loading...</div>');
+
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_get_feature_info',
+				nonce: wpforoE2E.nonce,
+				feature: feature
+			},
+			success: function(response) {
+				if (response.success) {
+					renderFeatureInfo(tab, response.data);
+					$infoBox.data('loaded', true);
+				} else {
+					$infoBox.html('<div class="e2e-info-loading">Error: ' + (response.data.message || 'Failed') + '</div>');
+				}
+			},
+			error: function() {
+				$infoBox.html('<div class="e2e-info-loading">Connection error</div>');
+			}
+		});
+	}
+
+	function renderFeatureInfo(tab, data) {
+		if (tab === 'search') {
+			renderSearchInfo(data);
+		}
+		// Add more feature renderers as needed
+	}
+
+	function renderSearchInfo(data) {
+		var db = data.database || {};
+		var settings = data.settings || {};
+		var suggestions = data.suggestions || [];
+
+		var html = '<h4>Database Status</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('Total Rows', db.total_rows || 0);
+		html += infoItem('Unique Topics', db.unique_topics || 0);
+		html += infoItem('Unique Posts', db.unique_posts || 0);
+		html += infoItem('Table Size', (db.table_size_mb || 0) + ' MB');
+		html += infoItem('Storage Mode', data.storage_mode || 'local', data.storage_mode === 'local' ? 'success' : '');
+		html += infoItem('Last Indexed', db.last_indexed || 'Never');
+		html += '</div>';
+
+		// Content types breakdown
+		if (db.by_type && db.by_type.length) {
+			html += '<h4>Content Types</h4>';
+			html += '<div class="e2e-info-grid-sm">';
+			db.by_type.forEach(function(t) {
+				html += infoItem(t.content_type, t.count);
+			});
+			html += '</div>';
+		}
+
+		html += '<h4>Settings</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('Quality', settings.search_quality);
+		html += infoItem('Min Score', settings.search_min_score + '%');
+		html += infoItem('Enhance', settings.search_enhance ? 'On' : 'Off', settings.search_enhance ? 'success' : '');
+		html += infoItem('Enhance Quality', settings.search_enhance_quality);
+		html += infoItem('Language', settings.search_language || 'Auto');
+		html += infoItem('Max Results', settings.search_max_results);
+		html += '</div>';
+
+		$('#search-info').html(html);
+
+		// Render suggestions
+		if (suggestions.length) {
+			var sugHtml = '<div class="suggestion-label">Try searching for:</div>';
+			suggestions.forEach(function(s) {
+				if (s) {
+					sugHtml += '<span class="e2e-suggestion-btn" data-query="' + escapeHtml(s) + '">' + escapeHtml(s) + '</span>';
+				}
+			});
+			$('#search-suggestions').html(sugHtml);
+
+			// Bind click
+			$('.e2e-suggestion-btn').off('click').on('click', function() {
+				$('#search-query').val($(this).data('query'));
+			});
+		}
+	}
+
+	function infoItem(label, value, valueClass) {
+		var cls = valueClass ? ' ' + valueClass : '';
+		return '<div class="e2e-info-sm"><span class="label">' + label + '</span><span class="value' + cls + '">' + value + '</span></div>';
+	}
+
+	function escapeHtml(str) {
+		return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 	}
 
 	function bindEvents() {

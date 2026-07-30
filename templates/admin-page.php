@@ -94,11 +94,23 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 		<div class="e2e-tab-content" data-tab="search">
 			<div class="e2e-panel">
 				<h2>Semantic Search</h2>
-				<div class="e2e-form-row">
-					<input type="text" id="search-query" placeholder="Search query..." value="how to configure">
-					<input type="number" id="search-limit" placeholder="Limit" value="5" min="1" max="20" style="width:80px;">
-					<button type="button" class="button button-primary e2e-run-test" data-test="semantic_search">Run Test</button>
+
+				<!-- Feature Info -->
+				<div class="e2e-feature-info" id="search-info">
+					<div class="e2e-info-loading">Loading search info...</div>
 				</div>
+
+				<!-- Test Form -->
+				<div class="e2e-test-form">
+					<h3>Run Test</h3>
+					<div class="e2e-form-row">
+						<input type="text" id="search-query" placeholder="Search query..." value="how to configure">
+						<input type="number" id="search-limit" placeholder="Limit" value="5" min="1" max="20" style="width:80px;">
+						<button type="button" class="button button-primary e2e-run-test" data-test="semantic_search">Run Test</button>
+					</div>
+					<div class="e2e-suggestions" id="search-suggestions"></div>
+				</div>
+
 				<div class="e2e-result-box" id="result-search"></div>
 			</div>
 		</div>

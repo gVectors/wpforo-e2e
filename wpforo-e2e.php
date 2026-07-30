@@ -35,6 +35,7 @@ class WPForo_E2E_Tester {
 		add_action( 'wp_ajax_wpforo_e2e_get_topics', [ $this, 'ajax_get_topics' ] );
 		add_action( 'wp_ajax_wpforo_e2e_get_tenant_info', [ $this, 'ajax_get_tenant_info' ] );
 		add_action( 'wp_ajax_wpforo_e2e_switch_storage', [ $this, 'ajax_switch_storage' ] );
+		add_action( 'wp_ajax_wpforo_e2e_get_feature_info', [ $this, 'ajax_get_feature_info' ] );
 	}
 
 	public function add_admin_menu() {
@@ -200,6 +201,217 @@ class WPForo_E2E_Tester {
 		update_option( 'wpforo_ai_storage_mode_' . $board_id, $mode );
 
 		wp_send_json_success( [ 'storage_mode' => $mode ] );
+	}
+
+	public function ajax_get_feature_info() {
+		$this->verify_request();
+
+		$feature = sanitize_text_field( $_POST['feature'] ?? '' );
+
+		if ( ! function_exists( 'WPF' ) ) {
+			wp_send_json_error( [ 'message' => 'wpForo not available' ] );
+		}
+
+		$info = [];
+
+		switch ( $feature ) {
+			case 'search':
+				$info = $this->get_search_info();
+				break;
+			case 'index':
+				$info = $this->get_index_info();
+				break;
+			case 'translate':
+				$info = $this->get_translate_info();
+				break;
+			case 'summarize':
+				$info = $this->get_summarize_info();
+				break;
+			case 'suggestions':
+				$info = $this->get_suggestions_info();
+				break;
+			case 'moderate':
+				$info = $this->get_moderate_info();
+				break;
+			case 'chat':
+				$info = $this->get_chat_info();
+				break;
+			default:
+				wp_send_json_error( [ 'message' => 'Unknown feature: ' . $feature ] );
+		}
+
+		wp_send_json_success( $info );
+	}
+
+	private function get_search_info() {
+		global $wpdb;
+
+		$board_id = WPF()->board->get_current( 'boardid' );
+		$ai_settings = WPF()->settings->ai ?? [];
+
+		// Get database stats
+		$db_stats = [];
+		if ( isset( WPF()->tables->ai_embeddings ) ) {
+			$table = WPF()->tables->ai_embeddings;
+
+			// Total rows
+			$db_stats['total_rows'] = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
+
+			// By content type
+			$db_stats['by_type'] = $wpdb->get_results(
+				"SELECT content_type, COUNT(*) as count FROM {$table} GROUP BY content_type",
+				ARRAY_A
+			);
+
+			// Unique topics/posts
+			$db_stats['unique_topics'] = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT topicid) FROM {$table} WHERE topicid > 0" );
+			$db_stats['unique_posts'] = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT postid) FROM {$table} WHERE postid > 0" );
+
+			// Table size
+			$table_status = $wpdb->get_row( $wpdb->prepare( "SHOW TABLE STATUS WHERE Name = %s", $table ) );
+			if ( $table_status ) {
+				$db_stats['table_size_mb'] = round( ( $table_status->Data_length + $table_status->Index_length ) / 1024 / 1024, 2 );
+			}
+
+			// Last indexed
+			$db_stats['last_indexed'] = $wpdb->get_var( "SELECT MAX(updated_at) FROM {$table}" );
+		}
+
+		// Get search settings
+		$settings = [
+			'search_quality'         => $ai_settings['search_quality'] ?? 'fast',
+			'search_min_score'       => $ai_settings['search_min_score'] ?? 30,
+			'search_enhance'         => $ai_settings['search_enhance'] ?? false,
+			'search_enhance_quality' => $ai_settings['search_enhance_quality'] ?? 'balanced',
+			'search_language'        => $ai_settings['search_language'] ?? 'auto',
+			'search_max_results'     => $ai_settings['search_max_results'] ?? 5,
+		];
+
+		// Get storage mode
+		$storage_mode = 'local';
+		if ( isset( WPF()->vector_storage ) ) {
+			$storage_mode = WPF()->vector_storage->get_storage_mode( $board_id );
+		}
+
+		// Get sample indexed content for suggestions
+		$suggestions = [];
+		if ( isset( WPF()->tables->ai_embeddings ) ) {
+			$samples = $wpdb->get_results(
+				"SELECT DISTINCT t.title
+				 FROM {$wpdb->prefix}wpforo_topics t
+				 INNER JOIN " . WPF()->tables->ai_embeddings . " e ON t.topicid = e.topicid
+				 WHERE e.topicid > 0
+				 ORDER BY RAND()
+				 LIMIT 5",
+				ARRAY_A
+			);
+			foreach ( $samples as $s ) {
+				// Extract key phrases from titles
+				$title = $s['title'];
+				$suggestions[] = $this->extract_search_phrase( $title );
+			}
+		}
+
+		return [
+			'database'    => $db_stats,
+			'settings'    => $settings,
+			'storage_mode' => $storage_mode,
+			'suggestions' => array_filter( array_unique( $suggestions ) ),
+		];
+	}
+
+	private function extract_search_phrase( $title ) {
+		// Remove common words and extract meaningful phrase
+		$title = strtolower( $title );
+		$stop_words = [ 'how', 'to', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'why', 'when', 'where', 'which', 'who', 'in', 'on', 'at', 'for', 'with', 'and', 'or', 'but', 'not', 'this', 'that', 'these', 'those', 'i', 'you', 'we', 'they', 'it', 'can', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'my', 'your', 'our', 'their' ];
+
+		$words = preg_split( '/\s+/', $title );
+		$meaningful = array_filter( $words, function( $w ) use ( $stop_words ) {
+			return strlen( $w ) > 2 && ! in_array( $w, $stop_words );
+		} );
+
+		return implode( ' ', array_slice( $meaningful, 0, 3 ) );
+	}
+
+	private function get_index_info() {
+		global $wpdb;
+		$board_id = WPF()->board->get_current( 'boardid' );
+
+		// Queue status
+		$queue_key = 'wpforo_ai_indexing_queue_' . $board_id;
+		$queue = get_option( $queue_key, [] );
+
+		$local_queue_key = 'wpforo_ai_indexing_queue_local_' . $board_id;
+		$local_queue = get_option( $local_queue_key, [] );
+
+		// Total topics in forum
+		$total_topics = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}wpforo_topics WHERE status = 0 AND private = 0" );
+
+		// Indexed count
+		$indexed_count = 0;
+		if ( isset( WPF()->tables->ai_embeddings ) ) {
+			$indexed_count = (int) $wpdb->get_var( "SELECT COUNT(DISTINCT topicid) FROM " . WPF()->tables->ai_embeddings . " WHERE topicid > 0" );
+		}
+
+		return [
+			'total_topics'   => $total_topics,
+			'indexed_count'  => $indexed_count,
+			'pending_count'  => $total_topics - $indexed_count,
+			'queue_size'     => count( $queue ),
+			'local_queue_size' => count( $local_queue ),
+			'is_indexing'    => (bool) get_transient( 'wpforo_ai_indexing_lock_' . $board_id ),
+		];
+	}
+
+	private function get_translate_info() {
+		$ai_settings = WPF()->settings->ai ?? [];
+		return [
+			'settings' => [
+				'translation_enabled' => $ai_settings['translation'] ?? false,
+				'default_language'    => $ai_settings['translation_language'] ?? 'auto',
+			],
+		];
+	}
+
+	private function get_summarize_info() {
+		$ai_settings = WPF()->settings->ai ?? [];
+		return [
+			'settings' => [
+				'summary_enabled' => $ai_settings['topic_summary'] ?? false,
+				'summary_quality' => $ai_settings['summary_quality'] ?? 'advanced',
+				'summary_style'   => $ai_settings['summary_style'] ?? 'detailed',
+			],
+		];
+	}
+
+	private function get_suggestions_info() {
+		$ai_settings = WPF()->settings->ai ?? [];
+		return [
+			'settings' => [
+				'suggestions_enabled' => $ai_settings['topic_suggestions'] ?? false,
+				'suggestions_count'   => $ai_settings['topic_suggestions_count'] ?? 3,
+			],
+		];
+	}
+
+	private function get_moderate_info() {
+		$ai_settings = WPF()->settings->ai ?? [];
+		return [
+			'settings' => [
+				'moderation_enabled' => $ai_settings['content_moderation'] ?? false,
+				'auto_moderate'      => $ai_settings['auto_moderate'] ?? false,
+			],
+		];
+	}
+
+	private function get_chat_info() {
+		$ai_settings = WPF()->settings->ai ?? [];
+		return [
+			'settings' => [
+				'chatbot_enabled'  => $ai_settings['chatbot'] ?? false,
+				'chatbot_position' => $ai_settings['chatbot_position'] ?? 'bottom-right',
+			],
+		];
 	}
 
 	public function ajax_get_topics() {

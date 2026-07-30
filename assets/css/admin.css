@@ -135,6 +135,104 @@
 	color: #8a2424;
 }
 
+/* Feature Info Section */
+.e2e-feature-info {
+	background: #f8f9fa;
+	border: 1px solid #e2e4e7;
+	border-radius: 4px;
+	padding: 15px;
+	margin-bottom: 20px;
+}
+
+.e2e-feature-info h4 {
+	margin: 0 0 10px 0;
+	font-size: 13px;
+	color: #1d2327;
+	border-bottom: 1px solid #e2e4e7;
+	padding-bottom: 8px;
+}
+
+.e2e-info-grid-sm {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	gap: 8px;
+}
+
+.e2e-info-sm {
+	display: flex;
+	justify-content: space-between;
+	padding: 6px 10px;
+	background: #fff;
+	border-radius: 3px;
+	font-size: 12px;
+}
+
+.e2e-info-sm .label {
+	color: #646970;
+}
+
+.e2e-info-sm .value {
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.e2e-info-sm .value.success {
+	color: #00a32a;
+}
+
+.e2e-info-sm .value.warning {
+	color: #dba617;
+}
+
+.e2e-info-sm .value.error {
+	color: #d63638;
+}
+
+.e2e-info-loading {
+	color: #666;
+	font-style: italic;
+	padding: 10px;
+	text-align: center;
+}
+
+/* Suggestions */
+.e2e-suggestions {
+	margin-top: 10px;
+}
+
+.e2e-suggestions .suggestion-label {
+	font-size: 12px;
+	color: #646970;
+	margin-bottom: 6px;
+}
+
+.e2e-suggestion-btn {
+	display: inline-block;
+	padding: 4px 10px;
+	margin: 2px;
+	background: #e7f3ff;
+	border: 1px solid #a0c4e8;
+	border-radius: 3px;
+	font-size: 12px;
+	color: #0073aa;
+	cursor: pointer;
+}
+
+.e2e-suggestion-btn:hover {
+	background: #cce5ff;
+}
+
+/* Test form */
+.e2e-test-form {
+	margin-bottom: 15px;
+}
+
+.e2e-test-form h3 {
+	font-size: 13px;
+	margin: 0 0 10px 0;
+	color: #646970;
+}
+
 /* Form row */
 .e2e-form-row {
 	display: flex;
