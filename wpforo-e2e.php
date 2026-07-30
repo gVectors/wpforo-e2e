@@ -796,7 +796,51 @@ class WPForo_E2E_Tester {
 		}
 
 		// Check for AI enhancement setting
-		$enhance_enabled = wpfval( WPF()->settings->ai, 'search_enhance' );
+		$enhance_setting = wpfval( WPF()->settings->ai, 'search_enhance' );
+		$enhance_enabled = ! empty( $enhance_setting ) && $enhance_setting !== '0' && $enhance_setting !== 0;
+
+		// Get AI enhancement (summary + recommendations) if enabled and we have 3+ results
+		$enhancement = null;
+		$enhance_credits = 0;
+		if ( $enhance_enabled && count( $enriched_results ) >= 3 ) {
+			$user_language = WPF()->ai_client->get_user_language();
+
+			// Format results for enhance API (needs content, not excerpt)
+			$results_for_enhance = [];
+			foreach ( $enriched_results as $r ) {
+				$results_for_enhance[] = [
+					'title'   => $r['title'],
+					'content' => $r['excerpt'],
+					'url'     => $r['url'],
+					'score'   => intval( $r['score'] ),
+				];
+			}
+
+			$enhance_response = WPF()->ai_client->enhance_search_results( $query, $results_for_enhance, $user_language );
+
+			if ( ! is_wp_error( $enhance_response ) && ! empty( $enhance_response['success'] ) ) {
+				$enhancement = [
+					'summary'         => $enhance_response['summary'] ?? '',
+					'quick_answer'    => $enhance_response['quick_answer'] ?? '',
+					'recommendations' => $enhance_response['recommendations'] ?? [],
+				];
+				$enhance_credits = $enhance_response['credits_used'] ?? 0;
+			} elseif ( is_wp_error( $enhance_response ) ) {
+				$enhancement = [
+					'error' => $enhance_response->get_error_message(),
+				];
+			} elseif ( ! empty( $enhance_response['disabled'] ) ) {
+				$enhancement = [
+					'disabled' => true,
+					'message'  => 'AI Enhancement is disabled in settings',
+				];
+			}
+		} elseif ( $enhance_enabled && count( $enriched_results ) < 3 ) {
+			$enhancement = [
+				'skipped' => true,
+				'message' => 'Need at least 3 results to generate AI enhancement',
+			];
+		}
 
 		return [
 			'success'       => count( $enriched_results ) > 0,
@@ -804,8 +848,9 @@ class WPForo_E2E_Tester {
 			'total_found'   => count( $enriched_results ),
 			'total_raw'     => $total,
 			'query_time_ms' => $query_time,
-			'credits_used'  => $credits_used,
+			'credits_used'  => $credits_used + $enhance_credits,
 			'results'       => $enriched_results,
+			'enhancement'   => $enhancement,
 			'message'       => count( $enriched_results ) > 0
 				? sprintf( 'Found %d results in %dms', count( $enriched_results ), $query_time )
 				: 'No results found (or all below min_score threshold)',
