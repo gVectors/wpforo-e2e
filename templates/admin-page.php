@@ -200,19 +200,61 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 		<div class="e2e-tab-content" data-tab="translate">
 			<div class="e2e-panel">
 				<h2>Translation</h2>
-				<div class="e2e-form-row">
-					<input type="number" id="translate-postid" placeholder="Post ID (empty=random)" style="width:150px;">
-					<select id="translate-language">
-						<option value="Spanish">Spanish</option>
-						<option value="French">French</option>
-						<option value="German">German</option>
-						<option value="Chinese">Chinese</option>
-						<option value="Japanese">Japanese</option>
-						<option value="Russian">Russian</option>
-					</select>
-					<button type="button" class="button button-primary e2e-run-test" data-test="translate">Translate</button>
+
+				<!-- Translation Info Section -->
+				<div class="e2e-feature-info" id="translate-info">
+					<div class="e2e-info-loading">Loading translation info...</div>
 				</div>
-				<div class="e2e-result-box" id="result-translate"></div>
+
+				<!-- Test Form -->
+				<div class="e2e-test-form">
+					<h3>Test Translation</h3>
+					<div class="e2e-translate-form">
+						<div class="e2e-form-row full-width">
+							<label class="e2e-form-label">Post:</label>
+							<select id="translate-post-select">
+								<option value="">Loading posts...</option>
+							</select>
+							<button type="button" class="button" id="refresh-translate-posts">Refresh</button>
+						</div>
+						<div class="e2e-form-row">
+							<label class="e2e-form-label">Target:</label>
+							<select id="translate-language">
+								<option value="Spanish">Spanish</option>
+								<option value="French">French</option>
+								<option value="German">German</option>
+								<option value="Italian">Italian</option>
+								<option value="Portuguese">Portuguese</option>
+								<option value="Chinese">Chinese</option>
+								<option value="Japanese">Japanese</option>
+								<option value="Korean">Korean</option>
+								<option value="Russian">Russian</option>
+								<option value="Arabic">Arabic</option>
+								<option value="Hindi">Hindi</option>
+								<option value="Turkish">Turkish</option>
+							</select>
+						</div>
+						<div class="e2e-form-row actions">
+							<button type="button" class="button button-primary button-hero e2e-run-test" data-test="translate">Translate</button>
+						</div>
+					</div>
+
+					<!-- Translation Result -->
+					<div class="e2e-translate-result" id="translate-result-display" style="display:none;">
+						<div class="e2e-translate-comparison">
+							<div class="e2e-translate-column">
+								<h4>Original</h4>
+								<div class="e2e-translate-content" id="translate-original"></div>
+							</div>
+							<div class="e2e-translate-column">
+								<h4>Translated</h4>
+								<div class="e2e-translate-content" id="translate-translated"></div>
+							</div>
+						</div>
+					</div>
+
+					<div class="e2e-result-box" id="result-translate"></div>
+				</div>
 			</div>
 		</div>
 

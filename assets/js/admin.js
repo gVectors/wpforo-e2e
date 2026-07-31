@@ -46,6 +46,11 @@
 		if (tab === 'index' && !$('#topic-select').data('loaded')) {
 			loadTopics();
 		}
+
+		// Load posts when translate tab is shown
+		if (tab === 'translate' && !$('#translate-post-select').data('loaded')) {
+			loadTranslatePosts();
+		}
 	}
 
 	function loadFeatureInfo(tab) {
@@ -94,8 +99,86 @@
 			renderSearchInfo(data);
 		} else if (tab === 'index') {
 			renderIndexInfo(data);
+		} else if (tab === 'translate') {
+			renderTranslateInfo(data);
 		}
 		// Add more feature renderers as needed
+	}
+
+	function renderTranslateInfo(data) {
+		var settings = data.settings || {};
+		var stats = data.stats || {};
+		var connection = data.connection || {};
+		var api = data.api || {};
+
+		var html = '<h4>Translation Settings</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('Translation Enabled', settings.translation_enabled ? 'Yes' : 'No', settings.translation_enabled ? 'success' : 'error');
+		html += infoItem('Default Language', settings.default_language || 'Auto');
+		html += infoItem('Quality', settings.translation_quality || 'standard');
+		html += infoItem('Auto-detect', settings.auto_detect_language ? 'Yes' : 'No');
+		html += '</div>';
+
+		html += '<h4>Status</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('API Connected', connection.connected ? 'Yes' : 'No', connection.connected ? 'success' : 'error');
+		if (connection.credits) {
+			html += infoItem('Credits Remaining', connection.credits.remaining || 0);
+		}
+		html += infoItem('Total Posts', stats.total_posts || 0);
+		html += infoItem('Available Languages', stats.available_languages || 0);
+		html += '</div>';
+
+		html += '<h4>API Info</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('Endpoint', api.endpoint || '/translate');
+		html += infoItem('Method', api.method || 'POST');
+		html += infoItem('Cost', api.cost || '1 credit');
+		html += '</div>';
+
+		$('#translate-info').html(html);
+	}
+
+	function loadTranslatePosts() {
+		var $select = $('#translate-post-select');
+		var $btn = $('#refresh-translate-posts');
+
+		$btn.addClass('is-loading');
+		$select.html('<option value="">Loading posts...</option>');
+
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_get_posts',
+				nonce: wpforoE2E.nonce,
+				limit: 50
+			},
+			success: function(response) {
+				$btn.removeClass('is-loading');
+				$select.data('loaded', true);
+				$select.empty().append('<option value="">Select a post...</option>');
+
+				if (response.success && response.data.length) {
+					response.data.forEach(function(post) {
+						var label = '#' + post.postid + ' - ' + post.preview;
+						$('<option></option>')
+							.val(post.postid)
+							.text(label)
+							.data('post', post)
+							.appendTo($select);
+					});
+					$select.append('<option disabled>───────────────</option>');
+					$select.append('<option disabled>' + response.data.length + ' posts loaded</option>');
+				} else {
+					$select.append('<option disabled>No posts found</option>');
+				}
+			},
+			error: function() {
+				$btn.removeClass('is-loading');
+				$select.html('<option value="">Error loading posts</option>');
+			}
+		});
 	}
 
 	function renderIndexInfo(data) {
@@ -308,6 +391,10 @@
 		$('#save-storage-mode').on('click', saveStorageMode);
 		$('#refresh-topics').on('click', loadTopics);
 		$('#filter-with-images, #filter-with-docs').on('change', loadTopics);
+		$('#refresh-translate-posts').on('click', function() {
+			$('#translate-post-select').data('loaded', false);
+			loadTranslatePosts();
+		});
 		$('.e2e-run-test').on('click', runTest);
 		$('#refresh-search-history').on('click', loadSearchHistory);
 		$('#clear-search-history').on('click', clearSearchHistory);
@@ -549,7 +636,7 @@
 					include_docs: $('#index-include-docs').is(':checked') ? 1 : 0
 				};
 			case 'translate':
-				return { postid: $('#translate-postid').val(), language: $('#translate-language').val() };
+				return { postid: $('#translate-post-select').val(), language: $('#translate-language').val() };
 			case 'summarize':
 				return { topicid: $('#summarize-topicid').val() };
 			case 'suggestions':
@@ -590,6 +677,12 @@
 		// Special rendering for index results with steps
 		if (boxId === 'result-index' && resultData.result && resultData.result.steps) {
 			renderIndexResult(boxId, resultData, statusClass, statusText, duration, timestamp);
+			return;
+		}
+
+		// Special rendering for translate results
+		if (boxId === 'result-translate' && resultData.result) {
+			renderTranslateResult(boxId, resultData, statusClass, statusText, duration, timestamp);
 			return;
 		}
 
@@ -707,6 +800,50 @@
 			'storage': 'Store Vectors'
 		};
 		return names[step] || step;
+	}
+
+	function renderTranslateResult(boxId, data, statusClass, statusText, duration, timestamp) {
+		var result = data.result;
+
+		// Show comparison view
+		$('#translate-result-display').show();
+
+		if (result.success && result.original && result.translated) {
+			$('#translate-original').html(
+				'<div class="e2e-translate-meta">' +
+				'Language: ' + (result.language.source || 'auto') +
+				' | Words: ' + result.original.words +
+				' | Length: ' + result.original.length + ' chars' +
+				'</div>' +
+				'<div style="white-space: pre-wrap;">' + escapeHtml(result.original.text) + '</div>'
+			);
+
+			$('#translate-translated').html(
+				'<div class="e2e-translate-meta">' +
+				'Language: ' + result.language.target +
+				' | Words: ' + result.translated.words +
+				' | Length: ' + result.translated.length + ' chars' +
+				'</div>' +
+				'<div style="white-space: pre-wrap;">' + escapeHtml(result.translated.text) + '</div>'
+			);
+		} else {
+			$('#translate-result-display').hide();
+		}
+
+		// Show JSON result
+		var html = '<div class="e2e-result-meta">' +
+			'<span class="' + statusClass + '">' + statusText + '</span> | ' +
+			duration + ' | ' + timestamp;
+
+		if (result.metrics) {
+			html += ' | API: ' + result.metrics.request_time_ms + 'ms';
+			html += ' | Credits: ' + result.metrics.credits_used;
+		}
+		html += '</div>';
+
+		html += '<pre>' + syntaxHighlight(JSON.stringify(data, null, 2)) + '</pre>';
+
+		$('#' + boxId).html(html);
 	}
 
 	function syntaxHighlight(json) {

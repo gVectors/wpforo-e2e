@@ -37,6 +37,7 @@ class WPForo_E2E_Tester {
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_admin_assets' ] );
 		add_action( 'wp_ajax_wpforo_e2e_run_test', [ $this, 'ajax_run_test' ] );
 		add_action( 'wp_ajax_wpforo_e2e_get_topics', [ $this, 'ajax_get_topics' ] );
+		add_action( 'wp_ajax_wpforo_e2e_get_posts', [ $this, 'ajax_get_posts' ] );
 		add_action( 'wp_ajax_wpforo_e2e_get_tenant_info', [ $this, 'ajax_get_tenant_info' ] );
 		add_action( 'wp_ajax_wpforo_e2e_switch_storage', [ $this, 'ajax_switch_storage' ] );
 		add_action( 'wp_ajax_wpforo_e2e_get_feature_info', [ $this, 'ajax_get_feature_info' ] );
@@ -564,11 +565,56 @@ class WPForo_E2E_Tester {
 	}
 
 	private function get_translate_info() {
+		global $wpdb;
+
 		$ai_settings = WPF()->settings->ai ?? [];
+		$board_id = WPF()->board->get_current( 'boardid' );
+
+		// Get translation stats
+		$total_posts = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}wpforo_posts" );
+
+		// Get available languages
+		$available_languages = [
+			'Spanish', 'French', 'German', 'Italian', 'Portuguese',
+			'Chinese', 'Japanese', 'Korean', 'Russian', 'Arabic',
+			'Hindi', 'Turkish', 'Dutch', 'Polish', 'Vietnamese',
+		];
+
+		// Check if AI client is connected
+		$ai_client = WPF()->ai_client;
+		$is_connected = $ai_client && $ai_client->is_connected();
+
+		// Get subscription info for credits
+		$credits_info = [];
+		if ( $is_connected ) {
+			$status = $ai_client->get_tenant_status();
+			if ( ! is_wp_error( $status ) && isset( $status['subscription'] ) ) {
+				$credits_info = [
+					'remaining' => $status['subscription']['credits_remaining'] ?? 0,
+					'used'      => $status['subscription']['credits_used'] ?? 0,
+				];
+			}
+		}
+
 		return [
 			'settings' => [
-				'translation_enabled' => $ai_settings['translation'] ?? false,
-				'default_language'    => $ai_settings['translation_language'] ?? 'auto',
+				'translation_enabled'  => $ai_settings['translation'] ?? false,
+				'default_language'     => $ai_settings['translation_language'] ?? 'auto',
+				'translation_quality'  => $ai_settings['translation_quality'] ?? 'standard',
+				'auto_detect_language' => $ai_settings['translation_auto_detect'] ?? true,
+			],
+			'stats' => [
+				'total_posts'         => $total_posts,
+				'available_languages' => count( $available_languages ),
+			],
+			'connection' => [
+				'connected' => $is_connected,
+				'credits'   => $credits_info,
+			],
+			'api' => [
+				'endpoint'    => '/v1/translation/translate',
+				'method'      => 'POST',
+				'cost'        => '1 credit per translation',
 			],
 		];
 	}
@@ -694,6 +740,47 @@ class WPForo_E2E_Tester {
 		}
 
 		wp_send_json_success( $topics );
+	}
+
+	public function ajax_get_posts() {
+		$this->verify_request();
+
+		global $wpdb;
+
+		$limit = intval( $_POST['limit'] ?? 50 );
+
+		// Get random posts with decent content length
+		$posts = $wpdb->get_results( $wpdb->prepare(
+			"SELECT p.postid, p.topicid, p.body, p.created, t.title as topic_title, u.display_name as author
+			 FROM {$wpdb->prefix}wpforo_posts p
+			 LEFT JOIN {$wpdb->prefix}wpforo_topics t ON p.topicid = t.topicid
+			 LEFT JOIN {$wpdb->prefix}users u ON p.userid = u.ID
+			 WHERE LENGTH(p.body) > 100
+			 ORDER BY RAND()
+			 LIMIT %d",
+			$limit
+		) );
+
+		$result = [];
+		foreach ( $posts as $post ) {
+			$body_plain = wp_strip_all_tags( $post->body );
+			$preview = mb_substr( $body_plain, 0, 80 );
+			if ( mb_strlen( $body_plain ) > 80 ) {
+				$preview .= '...';
+			}
+
+			$result[] = [
+				'postid'      => $post->postid,
+				'topicid'     => $post->topicid,
+				'topic_title' => $post->topic_title,
+				'author'      => $post->author,
+				'preview'     => $preview,
+				'length'      => mb_strlen( $body_plain ),
+				'created'     => $post->created,
+			];
+		}
+
+		wp_send_json_success( $result );
 	}
 
 	private function get_topic_attachments( $topicid ) {
@@ -1439,12 +1526,13 @@ class WPForo_E2E_Tester {
 		$language = sanitize_text_field( $params['language'] ?? 'Spanish' );
 
 		if ( ! $postid ) {
-			// Get a random post
-			global $wpdb;
-			$postid = $wpdb->get_var( "SELECT postid FROM {$wpdb->prefix}wpforo_posts ORDER BY RAND() LIMIT 1" );
+			return [
+				'success' => false,
+				'error'   => 'Please select a post to translate',
+			];
 		}
 
-		// Use reflection to access private translate method or call via AJAX simulation
+		// Get post data
 		$post = wpforo_post( $postid );
 		if ( ! $post ) {
 			return [
@@ -1453,20 +1541,64 @@ class WPForo_E2E_Tester {
 			];
 		}
 
-		// Make API call directly
+		// Get topic info
+		$topic = wpforo_topic( $post['topicid'] );
+
+		// Get original content
+		$original_html = $post['body'];
+		$original_text = wp_strip_all_tags( $original_html );
+		$original_length = mb_strlen( $original_text );
+
+		// Make API call
 		$ai_client = WPF()->ai_client;
+		$start_time = microtime( true );
+
 		$response = $this->call_ai_endpoint( '/translate', [
-			'content'         => wp_strip_all_tags( $post['body'] ),
+			'content'         => $original_text,
 			'target_language' => $language,
 			'content_type'    => 'post',
 		] );
 
+		$request_time = round( ( microtime( true ) - $start_time ) * 1000 );
+
+		if ( is_wp_error( $response ) ) {
+			return [
+				'success'  => false,
+				'error'    => $response->get_error_message(),
+				'postid'   => $postid,
+				'language' => $language,
+			];
+		}
+
+		// Extract translated content
+		$translated_text = $response['translated_content'] ?? $response['translation'] ?? '';
+		$detected_language = $response['detected_language'] ?? $response['source_language'] ?? 'unknown';
+		$credits_used = $response['credits_used'] ?? 1;
+
 		return [
-			'success'  => ! is_wp_error( $response ),
-			'postid'   => $postid,
-			'language' => $language,
-			'original' => wp_trim_words( $post['body'], 30 ),
-			'result'   => is_wp_error( $response ) ? $response->get_error_message() : $response,
+			'success'     => true,
+			'postid'      => $postid,
+			'topicid'     => $post['topicid'],
+			'topic_title' => $topic['title'] ?? '',
+			'language'    => [
+				'source' => $detected_language,
+				'target' => $language,
+			],
+			'original'    => [
+				'text'   => $original_text,
+				'length' => $original_length,
+				'words'  => str_word_count( $original_text ),
+			],
+			'translated'  => [
+				'text'   => $translated_text,
+				'length' => mb_strlen( $translated_text ),
+				'words'  => str_word_count( $translated_text ),
+			],
+			'metrics'     => [
+				'request_time_ms' => $request_time,
+				'credits_used'    => $credits_used,
+			],
+			'api_response' => $response,
 		];
 	}
 
