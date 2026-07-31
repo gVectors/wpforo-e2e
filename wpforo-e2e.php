@@ -744,7 +744,8 @@ class WPForo_E2E_Tester {
 		$ai_settings = WPF()->settings->ai ?? [];
 
 		// Get indexed topic stats
-		$storage_mode = WPF()->ai_client ? WPF()->ai_client->get_storage_mode() : 'local';
+		$board_id = WPF()->board->get_current( 'boardid' );
+		$storage_mode = WPF()->vector_storage ? WPF()->vector_storage->get_storage_mode( $board_id ) : 'local';
 		$total_topics = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}wpforo_topics" );
 
 		// Get example queries from topic titles (1 word, 2 words, 3 words)
