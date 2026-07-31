@@ -620,12 +620,76 @@ class WPForo_E2E_Tester {
 	}
 
 	private function get_summarize_info() {
+		global $wpdb;
+
 		$ai_settings = WPF()->settings->ai ?? [];
+
+		// Get topic stats
+		$total_topics = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}wpforo_topics" );
+		$topics_with_replies = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->prefix}wpforo_topics WHERE posts >= %d",
+				( $ai_settings['topic_summary_min_replies'] ?? 1 ) + 1
+			)
+		);
+
+		// Check if AI client is connected
+		$ai_client = WPF()->ai_client;
+		$is_connected = $ai_client && $ai_client->is_connected();
+
+		// Get subscription info for credits
+		$credits_info = [];
+		if ( $is_connected ) {
+			$status = $ai_client->get_tenant_status();
+			if ( ! is_wp_error( $status ) && isset( $status['subscription'] ) ) {
+				$credits_info = [
+					'remaining' => $status['subscription']['credits_remaining'] ?? 0,
+					'used'      => $status['subscription']['credits_used'] ?? 0,
+				];
+			}
+		}
+
+		// Quality options with credits
+		$quality_options = [
+			'fast'     => [ 'label' => 'Fast', 'credits' => 1 ],
+			'balanced' => [ 'label' => 'Balanced', 'credits' => 2 ],
+			'advanced' => [ 'label' => 'Advanced', 'credits' => 3 ],
+			'premium'  => [ 'label' => 'Premium', 'credits' => 4 ],
+		];
+
+		// Style options
+		$style_options = [
+			'compact'        => 'Compact with Key Points',
+			'structured'     => 'Structured with Sections',
+			'conversational' => 'Conversational Flow',
+			'detailed'       => 'Short Summary + Details',
+			'minimal'        => 'Minimal and Clean',
+		];
+
 		return [
 			'settings' => [
-				'summary_enabled' => $ai_settings['topic_summary'] ?? false,
-				'summary_quality' => $ai_settings['summary_quality'] ?? 'advanced',
-				'summary_style'   => $ai_settings['summary_style'] ?? 'detailed',
+				'summary_enabled'     => $ai_settings['topic_summary'] ?? false,
+				'summary_quality'     => $ai_settings['topic_summary_quality'] ?? 'balanced',
+				'summary_style'       => $ai_settings['topic_summary_style'] ?? 'detailed',
+				'min_replies'         => $ai_settings['topic_summary_min_replies'] ?? 1,
+				'summary_language'    => $ai_settings['topic_summary_language'] ?? 'auto',
+			],
+			'options' => [
+				'quality' => $quality_options,
+				'style'   => $style_options,
+			],
+			'stats' => [
+				'total_topics'        => $total_topics,
+				'topics_with_replies' => $topics_with_replies,
+			],
+			'connection' => [
+				'connected' => $is_connected,
+				'credits'   => $credits_info,
+			],
+			'api' => [
+				'endpoint' => '/v1/summarizing/summarize',
+				'method'   => 'POST',
+				'cost'     => '1-4 credits based on quality',
 			],
 		];
 	}
@@ -667,6 +731,7 @@ class WPForo_E2E_Tester {
 
 		$filter = sanitize_text_field( $_POST['filter'] ?? 'all' );
 		$limit = intval( $_POST['limit'] ?? 100 );
+		$min_replies = intval( $_POST['min_replies'] ?? 0 );
 
 		$topics = [];
 
@@ -675,6 +740,11 @@ class WPForo_E2E_Tester {
 		        FROM {$wpdb->prefix}wpforo_topics t
 		        LEFT JOIN {$wpdb->prefix}wpforo_forums f ON t.forumid = f.forumid
 		        WHERE t.status = 0 AND t.private = 0";
+
+		// Filter by minimum replies (posts > min_replies since posts count includes first post)
+		if ( $min_replies > 0 ) {
+			$sql .= $wpdb->prepare( " AND t.posts > %d", $min_replies );
+		}
 
 		// Filter for topics with attachments
 		// Images: <img> tags, [attach] shortcode, image URLs (.jpg, .png, .gif, .webp)
@@ -1604,6 +1674,17 @@ class WPForo_E2E_Tester {
 
 	private function test_summarize( $params ) {
 		$topicid = intval( $params['topicid'] ?? 0 );
+		$quality = sanitize_text_field( $params['quality'] ?? '' );
+		$style = sanitize_text_field( $params['style'] ?? '' );
+
+		// Use settings defaults if not provided
+		$ai_settings = WPF()->settings->ai ?? [];
+		if ( empty( $quality ) ) {
+			$quality = $ai_settings['topic_summary_quality'] ?? 'balanced';
+		}
+		if ( empty( $style ) ) {
+			$style = $ai_settings['topic_summary_style'] ?? 'detailed';
+		}
 
 		if ( ! $topicid ) {
 			global $wpdb;
@@ -1619,27 +1700,38 @@ class WPForo_E2E_Tester {
 		}
 
 		// Get posts for the topic
-		$posts = WPF()->post->get_posts( [ 'topicid' => $topicid, 'row_count' => 20 ] );
+		$posts = WPF()->post->get_posts( [ 'topicid' => $topicid, 'row_count' => 50 ] );
 
-		$content = '';
+		// Build posts array for API
+		$posts_data = [];
 		foreach ( $posts as $post ) {
-			$content .= wp_strip_all_tags( $post['body'] ) . "\n\n";
+			$posts_data[] = [
+				'postid'  => $post['postid'],
+				'content' => wp_strip_all_tags( $post['body'] ),
+				'author'  => $post['name'] ?? 'Anonymous',
+				'created' => $post['created'] ?? '',
+			];
 		}
 
-		$response = $this->call_ai_endpoint( '/summarizing/summarize', [
-			'content'      => $content,
-			'topic_title'  => $topic['title'],
-			'reply_count'  => count( $posts ) - 1,
-			'quality'      => 'advanced',
-			'style'        => 'detailed',
-		] );
+		$request_data = [
+			'topic_id'    => $topicid,
+			'topic_title' => $topic['title'],
+			'posts'       => $posts_data,
+			'quality'     => $quality,
+			'style'       => $style,
+		];
+
+		$response = $this->call_ai_endpoint( '/summarize', $request_data );
 
 		return [
-			'success' => ! is_wp_error( $response ),
-			'topicid' => $topicid,
-			'title'   => $topic['title'],
-			'posts'   => count( $posts ),
-			'result'  => is_wp_error( $response ) ? $response->get_error_message() : $response,
+			'success'  => ! is_wp_error( $response ),
+			'topicid'  => $topicid,
+			'title'    => $topic['title'],
+			'posts'    => count( $posts ),
+			'quality'  => $quality,
+			'style'    => $style,
+			'request'  => $request_data,
+			'response' => is_wp_error( $response ) ? [ 'error' => $response->get_error_message() ] : $response,
 		];
 	}
 

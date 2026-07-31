@@ -51,6 +51,11 @@
 		if (tab === 'translate' && !$('#translate-post-select').data('loaded')) {
 			loadTranslatePosts();
 		}
+
+		// Load topics when summarize tab is shown
+		if (tab === 'summarize' && !$('#summarize-topic-select').data('loaded')) {
+			loadSummarizeTopics();
+		}
 	}
 
 	function loadFeatureInfo(tab) {
@@ -101,8 +106,9 @@
 			renderIndexInfo(data);
 		} else if (tab === 'translate') {
 			renderTranslateInfo(data);
+		} else if (tab === 'summarize') {
+			renderSummarizeInfo(data);
 		}
-		// Add more feature renderers as needed
 	}
 
 	function renderTranslateInfo(data) {
@@ -137,6 +143,93 @@
 		html += '</div>';
 
 		$('#translate-info').html(html);
+	}
+
+	function renderSummarizeInfo(data) {
+		var settings = data.settings || {};
+		var stats = data.stats || {};
+		var connection = data.connection || {};
+		var api = data.api || {};
+		var options = data.options || {};
+
+		var html = '<h4>Summarization Settings</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('Summary Enabled', settings.summary_enabled ? 'Yes' : 'No', settings.summary_enabled ? 'success' : 'error');
+		html += infoItem('Quality', settings.summary_quality || 'balanced');
+		html += infoItem('Style', settings.summary_style || 'detailed');
+		html += infoItem('Min Replies', settings.min_replies || 1);
+		html += infoItem('Language', settings.summary_language || 'Auto');
+		html += '</div>';
+
+		html += '<h4>Status</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('API Connected', connection.connected ? 'Yes' : 'No', connection.connected ? 'success' : 'error');
+		if (connection.credits) {
+			html += infoItem('Credits Remaining', connection.credits.remaining || 0);
+		}
+		html += infoItem('Total Topics', stats.total_topics || 0);
+		html += infoItem('With Min Replies', stats.topics_with_replies || 0);
+		html += '</div>';
+
+		html += '<h4>API Info</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('Endpoint', api.endpoint || '/summarize');
+		html += infoItem('Method', api.method || 'POST');
+		html += infoItem('Cost', api.cost || '1-4 credits');
+		html += '</div>';
+
+		$('#summarize-info').html(html);
+
+		// Set default values in form from settings
+		if (settings.summary_quality) {
+			$('#summarize-quality').val(settings.summary_quality);
+		}
+		if (settings.summary_style) {
+			$('#summarize-style').val(settings.summary_style);
+		}
+	}
+
+	function loadSummarizeTopics() {
+		var $select = $('#summarize-topic-select');
+		var $btn = $('#refresh-summarize-topics');
+
+		$btn.addClass('is-loading');
+		$select.html('<option value="">Loading topics...</option>');
+
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_get_topics',
+				nonce: wpforoE2E.nonce,
+				limit: 50,
+				min_replies: 1
+			},
+			success: function(response) {
+				$btn.removeClass('is-loading');
+				$select.data('loaded', true);
+				$select.empty().append('<option value="">Select a topic...</option>');
+
+				if (response.success && response.data.length) {
+					response.data.forEach(function(topic) {
+						var label = '#' + topic.topicid + ' - ' + topic.title + ' (' + topic.posts + ' posts)';
+						$('<option></option>')
+							.val(topic.topicid)
+							.text(label)
+							.data('topic', topic)
+							.appendTo($select);
+					});
+					$select.append('<option disabled>───────────────</option>');
+					$select.append('<option disabled>' + response.data.length + ' topics loaded</option>');
+				} else {
+					$select.append('<option disabled>No topics with replies found</option>');
+				}
+			},
+			error: function() {
+				$btn.removeClass('is-loading');
+				$select.html('<option value="">Error loading topics</option>');
+			}
+		});
 	}
 
 	function loadTranslatePosts() {
@@ -395,6 +488,10 @@
 			$('#translate-post-select').data('loaded', false);
 			loadTranslatePosts();
 		});
+		$('#refresh-summarize-topics').on('click', function() {
+			$('#summarize-topic-select').data('loaded', false);
+			loadSummarizeTopics();
+		});
 		$('.e2e-run-test').on('click', runTest);
 		$('#refresh-search-history').on('click', loadSearchHistory);
 		$('#clear-search-history').on('click', clearSearchHistory);
@@ -638,7 +735,11 @@
 			case 'translate':
 				return { postid: $('#translate-post-select').val(), language: $('#translate-language').val() };
 			case 'summarize':
-				return { topicid: $('#summarize-topicid').val() };
+				return {
+					topicid: $('#summarize-topic-select').val(),
+					quality: $('#summarize-quality').val(),
+					style: $('#summarize-style').val()
+				};
 			case 'suggestions':
 				return { title: $('#suggestion-title').val() };
 			case 'moderate':
@@ -683,6 +784,12 @@
 		// Special rendering for translate results
 		if (boxId === 'result-translate' && resultData.result) {
 			renderTranslateResult(boxId, resultData, statusClass, statusText, duration, timestamp);
+			return;
+		}
+
+		// Special rendering for summarize results
+		if (boxId === 'result-summarize' && resultData.result) {
+			renderSummarizeResult(boxId, resultData, statusClass, statusText, duration, timestamp);
 			return;
 		}
 
@@ -844,6 +951,82 @@
 		html += '<pre>' + syntaxHighlight(JSON.stringify(data, null, 2)) + '</pre>';
 
 		$('#' + boxId).html(html);
+	}
+
+	function renderSummarizeResult(boxId, data, statusClass, statusText, duration, timestamp) {
+		var result = data.result;
+
+		// Show result display
+		$('#summarize-result-display').show();
+
+		if (result.success && result.response) {
+			// Topic info
+			var topicHtml = '';
+			topicHtml += '<div class="detail-item"><span class="detail-label">Topic ID</span><span class="detail-value">#' + result.topicid + '</span></div>';
+			topicHtml += '<div class="detail-item"><span class="detail-label">Title</span><span class="detail-value">' + escapeHtml(result.title || '') + '</span></div>';
+			topicHtml += '<div class="detail-item"><span class="detail-label">Posts</span><span class="detail-value">' + (result.posts || 0) + '</span></div>';
+			topicHtml += '<div class="detail-item"><span class="detail-label">Quality</span><span class="detail-value">' + (result.quality || 'balanced') + '</span></div>';
+			topicHtml += '<div class="detail-item"><span class="detail-label">Style</span><span class="detail-value">' + (result.style || 'detailed') + '</span></div>';
+			$('#summarize-topic-details').html(topicHtml);
+
+			// Summary content - check various response structures
+			var summaryText = '';
+			if (result.response.summary) {
+				summaryText = result.response.summary;
+			} else if (result.response.content) {
+				summaryText = result.response.content;
+			} else if (typeof result.response === 'string') {
+				summaryText = result.response;
+			}
+
+			// Convert markdown-like formatting to HTML
+			var summaryHtml = formatSummaryContent(summaryText);
+			$('#summarize-content').html(summaryHtml);
+		} else {
+			$('#summarize-result-display').hide();
+		}
+
+		// Show JSON result
+		var html = '<div class="e2e-result-meta">' +
+			'<span class="' + statusClass + '">' + statusText + '</span> | ' +
+			duration + ' | ' + timestamp;
+
+		if (result.response && result.response.credits_used) {
+			html += ' | Credits: ' + result.response.credits_used;
+		}
+		html += '</div>';
+
+		html += '<pre>' + syntaxHighlight(JSON.stringify(data, null, 2)) + '</pre>';
+
+		$('#' + boxId).html(html);
+	}
+
+	function formatSummaryContent(text) {
+		if (!text) return '';
+
+		// Convert markdown headers
+		text = text.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+		text = text.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+		text = text.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+
+		// Convert bold and italic
+		text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+		text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+		// Convert bullet points
+		text = text.replace(/^- (.+)$/gm, '<li>$1</li>');
+		text = text.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+		// Convert newlines to paragraphs for non-list content
+		var parts = text.split(/\n\n+/);
+		text = parts.map(function(p) {
+			p = p.trim();
+			if (!p) return '';
+			if (p.startsWith('<h') || p.startsWith('<ul')) return p;
+			return '<p>' + p.replace(/\n/g, '<br>') + '</p>';
+		}).join('');
+
+		return text;
 	}
 
 	function syntaxHighlight(json) {

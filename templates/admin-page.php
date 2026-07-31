@@ -262,11 +262,61 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 		<div class="e2e-tab-content" data-tab="summarize">
 			<div class="e2e-panel">
 				<h2>Topic Summarization</h2>
-				<div class="e2e-form-row">
-					<input type="number" id="summarize-topicid" placeholder="Topic ID (empty=random)" style="flex:1;">
-					<button type="button" class="button button-primary e2e-run-test" data-test="summarize">Summarize</button>
+
+				<!-- Summarize Info Section -->
+				<div class="e2e-feature-info" id="summarize-info">
+					<div class="e2e-info-loading">Loading summarize info...</div>
 				</div>
-				<div class="e2e-result-box" id="result-summarize"></div>
+
+				<!-- Test Form -->
+				<div class="e2e-test-form">
+					<h3>Test Summarization</h3>
+					<div class="e2e-summarize-form">
+						<div class="e2e-form-row full-width">
+							<label class="e2e-form-label">Topic:</label>
+							<select id="summarize-topic-select">
+								<option value="">Loading topics...</option>
+							</select>
+							<button type="button" class="button" id="refresh-summarize-topics">Refresh</button>
+						</div>
+						<div class="e2e-form-row">
+							<label class="e2e-form-label">Quality:</label>
+							<select id="summarize-quality">
+								<option value="fast">Fast (1 credit)</option>
+								<option value="balanced">Balanced (2 credits)</option>
+								<option value="advanced">Advanced (3 credits)</option>
+								<option value="premium">Premium (4 credits)</option>
+							</select>
+						</div>
+						<div class="e2e-form-row">
+							<label class="e2e-form-label">Style:</label>
+							<select id="summarize-style">
+								<option value="compact">Compact with Key Points</option>
+								<option value="structured">Structured with Sections</option>
+								<option value="conversational">Conversational Flow</option>
+								<option value="detailed">Short Summary + Details</option>
+								<option value="minimal">Minimal and Clean</option>
+							</select>
+						</div>
+						<div class="e2e-form-row actions">
+							<button type="button" class="button button-primary button-hero e2e-run-test" data-test="summarize">Summarize Topic</button>
+						</div>
+					</div>
+
+					<!-- Summarize Result -->
+					<div class="e2e-summarize-result" id="summarize-result-display" style="display:none;">
+						<div class="e2e-summarize-topic-info">
+							<h4>Topic Info</h4>
+							<div class="e2e-summarize-topic-details" id="summarize-topic-details"></div>
+						</div>
+						<div class="e2e-summarize-output">
+							<h4>Generated Summary</h4>
+							<div class="e2e-summarize-content" id="summarize-content"></div>
+						</div>
+					</div>
+
+					<div class="e2e-result-box" id="result-summarize"></div>
+				</div>
 			</div>
 		</div>
 
