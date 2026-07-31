@@ -1702,15 +1702,18 @@ class WPForo_E2E_Tester {
 		// Get posts for the topic
 		$posts = WPF()->post->get_posts( [ 'topicid' => $topicid, 'row_count' => 50 ] );
 
-		// Build posts array for API
+		// Build posts array for API (matching TopicPost model)
 		$posts_data = [];
+		$is_first = true;
 		foreach ( $posts as $post ) {
 			$posts_data[] = [
-				'postid'  => $post['postid'],
-				'content' => wp_strip_all_tags( $post['body'] ),
-				'author'  => $post['name'] ?? 'Anonymous',
-				'created' => $post['created'] ?? '',
+				'post_id'       => (int) $post['postid'],
+				'author'        => $post['name'] ?? 'Anonymous',
+				'content'       => wp_strip_all_tags( $post['body'] ),
+				'created_at'    => $post['created'] ?? '',
+				'is_first_post' => $is_first,
 			];
+			$is_first = false;
 		}
 
 		$request_data = [
@@ -1831,9 +1834,13 @@ class WPForo_E2E_Tester {
 		$decoded = json_decode( $body, true );
 
 		if ( $code >= 400 ) {
+			$error_detail = $decoded['detail'] ?? $body;
+			if ( is_array( $error_detail ) ) {
+				$error_detail = json_encode( $error_detail, JSON_PRETTY_PRINT );
+			}
 			return new \WP_Error(
 				'api_error',
-				sprintf( 'API returned %d: %s', $code, $decoded['detail'] ?? $body )
+				sprintf( 'API returned %d: %s', $code, $error_detail )
 			);
 		}
 
