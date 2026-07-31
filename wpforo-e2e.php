@@ -1708,7 +1708,7 @@ class WPForo_E2E_Tester {
 	}
 
 	private function call_ai_endpoint( $endpoint, $data = [], $method = 'POST' ) {
-		$api_key = WPF()->ai_client->get_api_key();
+		$api_key = WPF()->ai_client->get_stored_api_key();
 		$base_url = defined( 'WPFORO_AI_API' ) ? WPFORO_AI_API : 'https://api.gvectors.com/v1';
 
 		$url = rtrim( $base_url, '/' ) . $endpoint;
