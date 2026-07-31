@@ -256,6 +256,7 @@
 .e2e-form-row select {
 	padding: 0 10px;
 	height: 32px;
+	min-width: 159px;
 }
 
 .e2e-form-row textarea {
