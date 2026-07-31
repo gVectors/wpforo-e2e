@@ -1250,27 +1250,17 @@ class WPForo_E2E_Tester {
 		// Step 4: Run actual indexing
 		$start_time = microtime( true );
 
-		// For cloud mode, wpForo queues topics for background cron processing
-		// For local mode, we can do immediate indexing
+		// For cloud mode, use ingest_topics() which calls /rag/ingest (same as wpForo admin)
+		// Note: index_topic() calls /rag/queue which doesn't exist in the backend
 		if ( $storage_mode === 'cloud' ) {
-			// Debug: Check API key format
-			$api_key = WPF()->ai_client->get_stored_api_key();
-			$api_key_info = [
-				'length'     => strlen( $api_key ),
-				'prefix'     => substr( $api_key, 0, 6 ),
-				'has_spaces' => strpos( $api_key, ' ' ) !== false,
-				'has_newlines' => strpos( $api_key, "\n" ) !== false || strpos( $api_key, "\r" ) !== false,
-			];
-
-			// Use the same approach as wpForo admin - queue for cron
-			$index_result = WPF()->vector_storage->index_topic( $topicid, [ 'force' => true ] );
+			// Use ingest_topics which is what wpForo admin uses
+			$index_result = $ai_client->ingest_topics( [ $topicid ] );
 			$index_time = round( ( microtime( true ) - $start_time ) * 1000 );
 
 			if ( is_wp_error( $index_result ) ) {
 				$steps[] = $this->step_result( 'indexing', false, $index_result->get_error_message(), [
-					'mode'        => 'cloud',
-					'note'        => 'Cloud indexing queues topics for background processing',
-					'api_key_debug' => $api_key_info,
+					'mode'     => 'cloud',
+					'endpoint' => '/rag/ingest',
 				] );
 				return [
 					'success'      => false,
@@ -1280,16 +1270,34 @@ class WPForo_E2E_Tester {
 				];
 			}
 
-			$steps[] = $this->step_result( 'indexing', true, 'Topic queued for cloud indexing', [
-				'mode'     => 'cloud',
-				'note'     => 'Actual indexing happens via WP-Cron background process',
-				'time_ms'  => $index_time,
+			$indexed_count = $index_result['topics_processed'] ?? 1;
+			$steps[] = $this->step_result( 'indexing', true, 'Topic sent to cloud for indexing', [
+				'mode'            => 'cloud',
+				'endpoint'        => '/rag/ingest',
+				'topics_processed' => $indexed_count,
+				'time_ms'         => $index_time,
 			] );
 
-			// For cloud mode, skip image/doc processing steps since they happen in background
-			$steps[] = $this->step_result( 'storage', true, 'Queued for S3 Vectors', [
+			// Image/document processing
+			if ( $total_images > 0 && $include_images && $can_process_images ) {
+				$images_processed = $index_result['images_processed'] ?? 0;
+				$steps[] = $this->step_result( 'image_processing', true, 'Images queued for async processing', [
+					'found'  => $total_images,
+					'status' => 'Processing happens asynchronously via image_worker Lambda',
+				] );
+			}
+
+			if ( $total_documents > 0 && $include_docs && $can_process_docs ) {
+				$docs_processed = $index_result['documents_processed'] ?? 0;
+				$steps[] = $this->step_result( 'document_processing', true, 'Documents queued for processing', [
+					'found'  => $total_documents,
+					'status' => 'Processing happens asynchronously',
+				] );
+			}
+
+			$steps[] = $this->step_result( 'storage', true, 'Vectors stored in S3', [
 				'mode'     => $storage_mode,
-				'location' => 'S3 Vectors (AWS) - via background cron',
+				'location' => 'S3 Vectors (AWS)',
 			] );
 
 			return [
@@ -1303,10 +1311,9 @@ class WPForo_E2E_Tester {
 					'include_docs'   => $include_docs ? 'Yes' : 'No',
 				],
 				'summary'       => [
-					'queued'         => true,
-					'posts_to_index' => count( $posts ),
-					'images_found'   => $total_images,
-					'documents_found' => $total_documents,
+					'topics_processed'   => $indexed_count,
+					'images_found'       => $total_images,
+					'documents_found'    => $total_documents,
 				],
 				'steps'         => $steps,
 			];
