@@ -1249,8 +1249,71 @@ class WPForo_E2E_Tester {
 
 		// Step 4: Run actual indexing
 		$start_time = microtime( true );
+
+		// For cloud mode, wpForo queues topics for background cron processing
+		// For local mode, we can do immediate indexing
+		if ( $storage_mode === 'cloud' ) {
+			// Debug: Check API key format
+			$api_key = WPF()->ai_client->get_stored_api_key();
+			$api_key_info = [
+				'length'     => strlen( $api_key ),
+				'prefix'     => substr( $api_key, 0, 6 ),
+				'has_spaces' => strpos( $api_key, ' ' ) !== false,
+				'has_newlines' => strpos( $api_key, "\n" ) !== false || strpos( $api_key, "\r" ) !== false,
+			];
+
+			// Use the same approach as wpForo admin - queue for cron
+			$index_result = WPF()->vector_storage->index_topic( $topicid, [ 'force' => true ] );
+			$index_time = round( ( microtime( true ) - $start_time ) * 1000 );
+
+			if ( is_wp_error( $index_result ) ) {
+				$steps[] = $this->step_result( 'indexing', false, $index_result->get_error_message(), [
+					'mode'        => 'cloud',
+					'note'        => 'Cloud indexing queues topics for background processing',
+					'api_key_debug' => $api_key_info,
+				] );
+				return [
+					'success'      => false,
+					'topicid'      => $topicid,
+					'storage_mode' => $storage_mode,
+					'steps'        => $steps,
+				];
+			}
+
+			$steps[] = $this->step_result( 'indexing', true, 'Topic queued for cloud indexing', [
+				'mode'     => 'cloud',
+				'note'     => 'Actual indexing happens via WP-Cron background process',
+				'time_ms'  => $index_time,
+			] );
+
+			// For cloud mode, skip image/doc processing steps since they happen in background
+			$steps[] = $this->step_result( 'storage', true, 'Queued for S3 Vectors', [
+				'mode'     => $storage_mode,
+				'location' => 'S3 Vectors (AWS) - via background cron',
+			] );
+
+			return [
+				'success'       => true,
+				'topicid'       => $topicid,
+				'topic_title'   => $topic['title'],
+				'storage_mode'  => $storage_mode,
+				'total_time_ms' => $index_time,
+				'options_used'  => [
+					'include_images' => $include_images ? 'Yes' : 'No',
+					'include_docs'   => $include_docs ? 'Yes' : 'No',
+				],
+				'summary'       => [
+					'queued'         => true,
+					'posts_to_index' => count( $posts ),
+					'images_found'   => $total_images,
+					'documents_found' => $total_documents,
+				],
+				'steps'         => $steps,
+			];
+		}
+
+		// Local mode - immediate indexing
 		$index_options = [ 'force' => true ];
-		// Note: image/doc processing is controlled by AIClient plan settings, not passed options
 		$index_result = WPF()->vector_storage->index_topic( $topicid, $index_options );
 		$index_time = round( ( microtime( true ) - $start_time ) * 1000 );
 
