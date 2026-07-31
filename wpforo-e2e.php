@@ -1950,18 +1950,65 @@ class WPForo_E2E_Tester {
 			$similarity = ( $ai_settings['topic_suggestions_similarity'] ?? 55 ) / 100;
 		}
 
+		$max_similar = $ai_settings['topic_suggestions_max_similar'] ?? 3;
+		$max_related = $ai_settings['topic_suggestions_max_related'] ?? 3;
+
+		// Check storage mode
+		$board_id = WPF()->board->get_current( 'boardid' );
+		$is_local_mode = WPF()->vector_storage && WPF()->vector_storage->is_local_mode( $board_id );
+
 		$request_data = [
 			'title'                => $title,
 			'quality'              => $quality,
 			'include_similar'      => true,
 			'include_related'      => true,
 			'include_answer'       => $include_answer,
-			'max_similar'          => $ai_settings['topic_suggestions_max_similar'] ?? 3,
-			'max_related'          => $ai_settings['topic_suggestions_max_related'] ?? 3,
+			'max_similar'          => $max_similar,
+			'max_related'          => $max_related,
 			'similarity_threshold' => $similarity,
+			'storage_mode'         => $is_local_mode ? 'local' : 'cloud',
 		];
 
 		$start_time = microtime( true );
+
+		// For local mode, search local embeddings first (hybrid mode)
+		if ( $is_local_mode ) {
+			$fetch_count = ( $max_similar + $max_related ) * 2;
+			$search_results = WPF()->vector_storage->semantic_search( $title, $fetch_count );
+
+			if ( ! is_wp_error( $search_results ) && ! empty( $search_results['results'] ) ) {
+				// Local cosine similarities are scaled differently - use 1/3 threshold
+				$local_threshold = max( 0.15, $similarity / 3 );
+
+				// Group by topic and get best match
+				$by_topic = [];
+				foreach ( $search_results['results'] as $item ) {
+					$topicid = (int) ( $item['topic_id'] ?? 0 );
+					if ( $topicid <= 0 ) continue;
+
+					$score = (float) ( $item['similarity'] ?? $item['score'] ?? 0 );
+					if ( $score < $local_threshold ) continue;
+
+					if ( ! isset( $by_topic[ $topicid ] ) || $score > $by_topic[ $topicid ]['score'] ) {
+						$topic = wpforo_topic( $topicid );
+						if ( $topic ) {
+							$by_topic[ $topicid ] = [
+								'topic_id' => $topicid,
+								'title'    => $topic['title'],
+								'score'    => $score,
+								'posts'    => (int) ( $topic['posts'] ?? 0 ),
+							];
+						}
+					}
+				}
+
+				// Sort by score and pass to API
+				$similar_topics_input = array_values( $by_topic );
+				usort( $similar_topics_input, fn( $a, $b ) => $b['score'] <=> $a['score'] );
+				$request_data['similar_topics_input'] = array_slice( $similar_topics_input, 0, $max_similar * 2 );
+			}
+		}
+
 		$response = $this->call_ai_endpoint( '/suggestions/suggest', $request_data );
 		$query_time_ms = round( ( microtime( true ) - $start_time ) * 1000 );
 
