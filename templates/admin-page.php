@@ -324,11 +324,104 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 		<div class="e2e-tab-content" data-tab="suggestions">
 			<div class="e2e-panel">
 				<h2>Topic Suggestions</h2>
-				<div class="e2e-form-row">
-					<input type="text" id="suggestion-title" placeholder="Topic title..." value="How to configure forum settings" style="flex:1;">
-					<button type="button" class="button button-primary e2e-run-test" data-test="suggestions">Get Suggestions</button>
+
+				<!-- Suggestions Info Section -->
+				<div class="e2e-feature-info" id="suggestions-info">
+					<div class="e2e-info-loading">Loading suggestions info...</div>
 				</div>
-				<div class="e2e-result-box" id="result-suggestions"></div>
+
+				<!-- Test Form -->
+				<div class="e2e-test-form">
+					<h3>Test Suggestions</h3>
+					<div class="e2e-suggestions-form">
+						<div class="e2e-form-row full-width">
+							<label class="e2e-form-label">Title:</label>
+							<input type="text" id="suggestion-title" placeholder="Enter topic title to get suggestions..." value="">
+						</div>
+						<div class="e2e-form-row full-width">
+							<label class="e2e-form-label">Examples:</label>
+							<div class="e2e-suggestion-examples" id="suggestion-examples">
+								<span class="e2e-example-loading">Loading...</span>
+							</div>
+						</div>
+						<div class="e2e-form-row">
+							<label class="e2e-form-label">Quality:</label>
+							<select id="suggestion-quality">
+								<option value="fast">Fast (1 credit)</option>
+								<option value="balanced">Balanced (2 credits)</option>
+								<option value="advanced">Advanced (3 credits)</option>
+								<option value="premium">Premium (4 credits)</option>
+							</select>
+						</div>
+						<div class="e2e-form-row">
+							<label class="e2e-form-label">Similarity:</label>
+							<select id="suggestion-similarity">
+								<option value="0.40">40% (Very Loose)</option>
+								<option value="0.50">50% (Loose)</option>
+								<option value="0.55">55% (Default)</option>
+								<option value="0.60">60% (Moderate)</option>
+								<option value="0.70">70% (Strict)</option>
+								<option value="0.80">80% (Very Strict)</option>
+							</select>
+						</div>
+						<div class="e2e-form-row">
+							<label class="e2e-form-label">Options:</label>
+							<label class="e2e-checkbox"><input type="checkbox" id="suggestion-include-answer" checked> <span>Include AI Answer</span></label>
+						</div>
+						<div class="e2e-form-row actions">
+							<button type="button" class="button button-primary button-hero e2e-run-test" data-test="suggestions">Get Suggestions</button>
+						</div>
+					</div>
+
+					<!-- Suggestions Result Display -->
+					<div class="e2e-suggestions-result" id="suggestions-result-display" style="display:none;">
+						<div class="e2e-suggestions-similar" id="suggestions-similar-section" style="display:none;">
+							<h4>Similar Topics <span class="e2e-badge" id="suggestions-similar-count">0</span></h4>
+							<div class="e2e-suggestions-list" id="suggestions-similar-list"></div>
+						</div>
+						<div class="e2e-suggestions-related" id="suggestions-related-section" style="display:none;">
+							<h4>Related Topics <span class="e2e-badge" id="suggestions-related-count">0</span></h4>
+							<div class="e2e-suggestions-list" id="suggestions-related-list"></div>
+						</div>
+						<div class="e2e-suggestions-answer" id="suggestions-answer-section" style="display:none;">
+							<h4>AI Quick Answer</h4>
+							<div class="e2e-suggestions-answer-content" id="suggestions-answer-content"></div>
+						</div>
+					</div>
+
+					<div class="e2e-result-box" id="result-suggestions"></div>
+				</div>
+
+				<!-- Suggestion History -->
+				<div class="e2e-history-section">
+					<h3>
+						Test History
+						<button type="button" class="button button-small" id="refresh-suggestion-history">Refresh</button>
+						<button type="button" class="button button-small" id="clear-suggestion-history">Clear All</button>
+					</h3>
+					<div class="e2e-history-table-wrap">
+						<table class="e2e-history-table" id="suggestion-history-table">
+							<thead>
+								<tr>
+									<th>Date</th>
+									<th>Query</th>
+									<th>Quality</th>
+									<th>Threshold</th>
+									<th>Similar</th>
+									<th>Related</th>
+									<th>Answer</th>
+									<th>Top Score</th>
+									<th>Time</th>
+									<th>Credits</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody id="suggestion-history-body">
+								<tr><td colspan="11" class="e2e-loading">Loading history...</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
 			</div>
 		</div>
 

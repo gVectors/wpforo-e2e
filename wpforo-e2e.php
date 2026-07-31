@@ -21,6 +21,7 @@ class WPForo_E2E_Tester {
 
 	private static $instance = null;
 	private $table_name;
+	private $suggestion_table;
 
 	public static function instance() {
 		if ( self::$instance === null ) {
@@ -32,6 +33,7 @@ class WPForo_E2E_Tester {
 	public function __construct() {
 		global $wpdb;
 		$this->table_name = $wpdb->prefix . 'wpforo_ai_e2e_search_tests';
+		$this->suggestion_table = $wpdb->prefix . 'wpforo_ai_e2e_suggestion_tests';
 
 		add_action( 'admin_menu', [ $this, 'add_admin_menu' ] );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_admin_assets' ] );
@@ -44,9 +46,13 @@ class WPForo_E2E_Tester {
 		add_action( 'wp_ajax_wpforo_e2e_get_search_history', [ $this, 'ajax_get_search_history' ] );
 		add_action( 'wp_ajax_wpforo_e2e_clear_search_history', [ $this, 'ajax_clear_search_history' ] );
 		add_action( 'wp_ajax_wpforo_e2e_delete_search_test', [ $this, 'ajax_delete_search_test' ] );
+		add_action( 'wp_ajax_wpforo_e2e_get_suggestion_history', [ $this, 'ajax_get_suggestion_history' ] );
+		add_action( 'wp_ajax_wpforo_e2e_clear_suggestion_history', [ $this, 'ajax_clear_suggestion_history' ] );
+		add_action( 'wp_ajax_wpforo_e2e_delete_suggestion_test', [ $this, 'ajax_delete_suggestion_test' ] );
 
-		// Create table on init if not exists
+		// Create tables on init if not exists
 		$this->maybe_create_table();
+		$this->maybe_create_suggestion_table();
 	}
 
 	private function maybe_create_table() {
@@ -79,6 +85,44 @@ class WPForo_E2E_Tester {
 			created_at DATETIME NOT NULL,
 			PRIMARY KEY (id),
 			KEY query_idx (query),
+			KEY created_at_idx (created_at)
+		) $charset_collate;";
+
+		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+		dbDelta( $sql );
+	}
+
+	private function maybe_create_suggestion_table() {
+		global $wpdb;
+
+		$table = $this->suggestion_table;
+		if ( $wpdb->get_var( "SHOW TABLES LIKE '$table'" ) !== $table ) {
+			$this->create_suggestion_table();
+		}
+	}
+
+	public function create_suggestion_table() {
+		global $wpdb;
+
+		$charset_collate = $wpdb->get_charset_collate();
+		$table = $this->suggestion_table;
+
+		$sql = "CREATE TABLE $table (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			query VARCHAR(500) NOT NULL,
+			quality VARCHAR(20) NOT NULL DEFAULT 'balanced',
+			similarity_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.55,
+			total_similar INT NOT NULL DEFAULT 0,
+			total_related INT NOT NULL DEFAULT 0,
+			has_answer TINYINT(1) NOT NULL DEFAULT 0,
+			top_score DECIMAL(5,2) DEFAULT NULL,
+			query_time_ms INT NOT NULL DEFAULT 0,
+			credits_used INT NOT NULL DEFAULT 0,
+			settings_json TEXT,
+			results_json LONGTEXT,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY query_idx (query(191)),
 			KEY created_at_idx (created_at)
 		) $charset_collate;";
 
@@ -695,11 +739,110 @@ class WPForo_E2E_Tester {
 	}
 
 	private function get_suggestions_info() {
+		global $wpdb;
+
 		$ai_settings = WPF()->settings->ai ?? [];
+
+		// Get indexed topic stats
+		$storage_mode = WPF()->ai_client ? WPF()->ai_client->get_storage_mode() : 'local';
+		$total_topics = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}wpforo_topics" );
+
+		// Get example queries from topic titles (1 word, 2 words, 3 words)
+		$examples = [];
+
+		// 1 word example
+		$one_word = $wpdb->get_var(
+			"SELECT title FROM {$wpdb->prefix}wpforo_topics
+			 WHERE LENGTH(title) - LENGTH(REPLACE(title, ' ', '')) = 0
+			 AND LENGTH(title) > 3
+			 ORDER BY RAND() LIMIT 1"
+		);
+		if ( $one_word ) $examples[] = $one_word;
+
+		// 2 words example
+		$two_words = $wpdb->get_var(
+			"SELECT title FROM {$wpdb->prefix}wpforo_topics
+			 WHERE LENGTH(title) - LENGTH(REPLACE(title, ' ', '')) = 1
+			 ORDER BY RAND() LIMIT 1"
+		);
+		if ( $two_words ) $examples[] = $two_words;
+
+		// 3 words example
+		$three_words = $wpdb->get_var(
+			"SELECT title FROM {$wpdb->prefix}wpforo_topics
+			 WHERE LENGTH(title) - LENGTH(REPLACE(title, ' ', '')) = 2
+			 ORDER BY RAND() LIMIT 1"
+		);
+		if ( $three_words ) $examples[] = $three_words;
+
+		// Fill remaining with random titles if needed
+		while ( count( $examples ) < 5 ) {
+			$random = $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT title FROM {$wpdb->prefix}wpforo_topics
+					 WHERE title NOT IN (%s) ORDER BY RAND() LIMIT 1",
+					implode( ',', array_map( 'esc_sql', $examples ) )
+				)
+			);
+			if ( $random && ! in_array( $random, $examples ) ) {
+				$examples[] = $random;
+			} else {
+				break;
+			}
+		}
+
+		// Check if AI client is connected
+		$ai_client = WPF()->ai_client;
+		$is_connected = $ai_client && $ai_client->is_connected();
+
+		// Get subscription info for credits
+		$credits_info = [];
+		if ( $is_connected ) {
+			$status = $ai_client->get_tenant_status();
+			if ( ! is_wp_error( $status ) && isset( $status['subscription'] ) ) {
+				$credits_info = [
+					'remaining' => $status['subscription']['credits_remaining'] ?? 0,
+					'used'      => $status['subscription']['credits_used'] ?? 0,
+				];
+			}
+		}
+
+		// Quality options
+		$quality_options = [
+			'fast'     => [ 'label' => 'Fast', 'credits' => 1 ],
+			'balanced' => [ 'label' => 'Balanced', 'credits' => 2 ],
+			'advanced' => [ 'label' => 'Advanced', 'credits' => 3 ],
+			'premium'  => [ 'label' => 'Premium', 'credits' => 4 ],
+		];
+
 		return [
 			'settings' => [
 				'suggestions_enabled' => $ai_settings['topic_suggestions'] ?? false,
-				'suggestions_count'   => $ai_settings['topic_suggestions_count'] ?? 3,
+				'quality'             => $ai_settings['topic_suggestions_quality'] ?? 'balanced',
+				'min_words'           => $ai_settings['topic_suggestions_min_words'] ?? 3,
+				'max_similar'         => $ai_settings['topic_suggestions_max_similar'] ?? 3,
+				'max_related'         => $ai_settings['topic_suggestions_max_related'] ?? 3,
+				'similarity'          => $ai_settings['topic_suggestions_similarity'] ?? 55,
+				'show_related'        => $ai_settings['topic_suggestions_show_related'] ?? false,
+				'show_answer'         => $ai_settings['topic_suggestions_show_answer'] ?? false,
+				'language'            => $ai_settings['topic_suggestions_language'] ?? 'auto',
+			],
+			'options' => [
+				'quality' => $quality_options,
+			],
+			'stats' => [
+				'total_topics'  => $total_topics,
+				'storage_mode'  => $storage_mode,
+			],
+			'examples' => $examples,
+			'connection' => [
+				'connected' => $is_connected,
+				'credits'   => $credits_info,
+			],
+			'api' => [
+				'endpoint' => '/v1/suggestions/suggest',
+				'method'   => 'POST',
+				'cost'     => '1-4 credits based on quality',
 			],
 		];
 	}
@@ -1302,6 +1445,61 @@ class WPForo_E2E_Tester {
 		wp_send_json_success( [ 'message' => 'Deleted' ] );
 	}
 
+	public function ajax_get_suggestion_history() {
+		$this->verify_request();
+
+		global $wpdb;
+		$limit = intval( $_POST['limit'] ?? 50 );
+
+		$results = $wpdb->get_results( $wpdb->prepare(
+			"SELECT * FROM {$this->suggestion_table} ORDER BY created_at DESC LIMIT %d",
+			$limit
+		) );
+
+		$history = [];
+		foreach ( $results as $row ) {
+			$history[] = [
+				'id'           => $row->id,
+				'query'        => $row->query,
+				'quality'      => $row->quality,
+				'similarity'   => $row->similarity_threshold,
+				'total_similar' => $row->total_similar,
+				'total_related' => $row->total_related,
+				'has_answer'   => (bool) $row->has_answer,
+				'top_score'    => $row->top_score,
+				'query_time_ms' => $row->query_time_ms,
+				'credits_used' => $row->credits_used,
+				'settings'     => json_decode( $row->settings_json, true ),
+				'results'      => json_decode( $row->results_json, true ),
+				'created_at'   => $row->created_at,
+			];
+		}
+
+		wp_send_json_success( $history );
+	}
+
+	public function ajax_clear_suggestion_history() {
+		$this->verify_request();
+
+		global $wpdb;
+		$wpdb->query( "TRUNCATE TABLE {$this->suggestion_table}" );
+
+		wp_send_json_success( [ 'message' => 'Suggestion history cleared' ] );
+	}
+
+	public function ajax_delete_suggestion_test() {
+		$this->verify_request();
+
+		global $wpdb;
+		$id = intval( $_POST['id'] ?? 0 );
+
+		if ( $id > 0 ) {
+			$wpdb->delete( $this->suggestion_table, [ 'id' => $id ], [ '%d' ] );
+		}
+
+		wp_send_json_success( [ 'message' => 'Deleted' ] );
+	}
+
 	private function test_index_topic( $params ) {
 		$topicid = intval( $params['topicid'] ?? 0 );
 		$include_images = intval( $params['include_images'] ?? 1 );
@@ -1739,17 +1937,98 @@ class WPForo_E2E_Tester {
 	}
 
 	private function test_suggestions( $params ) {
-		$title = sanitize_text_field( $params['title'] ?? 'How to configure forum settings' );
+		global $wpdb;
 
-		$response = $this->call_ai_endpoint( '/suggestions/suggest', [
-			'title'   => $title,
-			'forumid' => 1,
-		] );
+		$title = sanitize_text_field( $params['title'] ?? 'How to configure forum settings' );
+		$quality = sanitize_text_field( $params['quality'] ?? '' );
+		$similarity = floatval( $params['similarity'] ?? 0 );
+		$include_answer = ! empty( $params['include_answer'] );
+
+		// Use settings defaults if not provided
+		$ai_settings = WPF()->settings->ai ?? [];
+		if ( empty( $quality ) ) {
+			$quality = $ai_settings['topic_suggestions_quality'] ?? 'balanced';
+		}
+		if ( $similarity <= 0 ) {
+			$similarity = ( $ai_settings['topic_suggestions_similarity'] ?? 55 ) / 100;
+		}
+
+		$request_data = [
+			'title'                => $title,
+			'quality'              => $quality,
+			'include_similar'      => true,
+			'include_related'      => true,
+			'include_answer'       => $include_answer,
+			'max_similar'          => $ai_settings['topic_suggestions_max_similar'] ?? 3,
+			'max_related'          => $ai_settings['topic_suggestions_max_related'] ?? 3,
+			'similarity_threshold' => $similarity,
+		];
+
+		$start_time = microtime( true );
+		$response = $this->call_ai_endpoint( '/suggestions/suggest', $request_data );
+		$query_time_ms = round( ( microtime( true ) - $start_time ) * 1000 );
+
+		$is_success = ! is_wp_error( $response );
+
+		// Extract result data
+		$total_similar = 0;
+		$total_related = 0;
+		$has_answer = false;
+		$top_score = null;
+		$credits_used = 0;
+
+		if ( $is_success && is_array( $response ) ) {
+			$similar = $response['similar_topics'] ?? [];
+			$related = $response['related_topics'] ?? [];
+			$total_similar = count( $similar );
+			$total_related = count( $related );
+			$has_answer = ! empty( $response['ai_answer'] );
+			$credits_used = $response['credits_used'] ?? 0;
+
+			if ( ! empty( $similar ) && isset( $similar[0]['score'] ) ) {
+				$top_score = $similar[0]['score'];
+			}
+		}
+
+		// Save to history table
+		$settings = [
+			'quality'    => $quality,
+			'similarity' => $similarity,
+			'include_answer' => $include_answer,
+		];
+
+		$wpdb->insert(
+			$this->suggestion_table,
+			[
+				'query'                => $title,
+				'quality'              => $quality,
+				'similarity_threshold' => $similarity,
+				'total_similar'        => $total_similar,
+				'total_related'        => $total_related,
+				'has_answer'           => $has_answer ? 1 : 0,
+				'top_score'            => $top_score,
+				'query_time_ms'        => $query_time_ms,
+				'credits_used'         => $credits_used,
+				'settings_json'        => json_encode( $settings ),
+				'results_json'         => json_encode( $is_success ? $response : [ 'error' => $response->get_error_message() ] ),
+				'created_at'           => current_time( 'mysql' ),
+			],
+			[ '%s', '%s', '%f', '%d', '%d', '%d', '%f', '%d', '%d', '%s', '%s', '%s' ]
+		);
 
 		return [
-			'success' => ! is_wp_error( $response ),
-			'title'   => $title,
-			'result'  => is_wp_error( $response ) ? $response->get_error_message() : $response,
+			'success'       => $is_success,
+			'title'         => $title,
+			'quality'       => $quality,
+			'similarity'    => $similarity,
+			'total_similar' => $total_similar,
+			'total_related' => $total_related,
+			'has_answer'    => $has_answer,
+			'top_score'     => $top_score,
+			'query_time_ms' => $query_time_ms,
+			'credits_used'  => $credits_used,
+			'request'       => $request_data,
+			'response'      => $is_success ? $response : [ 'error' => $response->get_error_message() ],
 		];
 	}
 

@@ -56,6 +56,11 @@
 		if (tab === 'summarize' && !$('#summarize-topic-select').data('loaded')) {
 			loadSummarizeTopics();
 		}
+
+		// Load suggestion history when suggestions tab is shown
+		if (tab === 'suggestions') {
+			loadSuggestionHistory();
+		}
 	}
 
 	function loadFeatureInfo(tab) {
@@ -108,6 +113,8 @@
 			renderTranslateInfo(data);
 		} else if (tab === 'summarize') {
 			renderSummarizeInfo(data);
+		} else if (tab === 'suggestions') {
+			renderSuggestionsInfo(data);
 		}
 	}
 
@@ -230,6 +237,66 @@
 				$select.html('<option value="">Error loading topics</option>');
 			}
 		});
+	}
+
+	function renderSuggestionsInfo(data) {
+		var settings = data.settings || {};
+		var stats = data.stats || {};
+		var connection = data.connection || {};
+		var api = data.api || {};
+		var examples = data.examples || [];
+
+		var html = '<h4>Suggestions Settings</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('Suggestions Enabled', settings.suggestions_enabled ? 'Yes' : 'No', settings.suggestions_enabled ? 'success' : 'error');
+		html += infoItem('Quality', settings.quality || 'balanced');
+		html += infoItem('Min Words', settings.min_words || 3);
+		html += infoItem('Similarity', (settings.similarity || 55) + '%');
+		html += infoItem('Max Similar', settings.max_similar || 3);
+		html += infoItem('Max Related', settings.max_related || 3);
+		html += infoItem('Show Related', settings.show_related ? 'Yes' : 'No');
+		html += infoItem('Show AI Answer', settings.show_answer ? 'Yes' : 'No');
+		html += '</div>';
+
+		html += '<h4>Status</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('API Connected', connection.connected ? 'Yes' : 'No', connection.connected ? 'success' : 'error');
+		if (connection.credits) {
+			html += infoItem('Credits Remaining', connection.credits.remaining || 0);
+		}
+		html += infoItem('Total Topics', stats.total_topics || 0);
+		html += infoItem('Storage Mode', stats.storage_mode || 'local');
+		html += '</div>';
+
+		html += '<h4>API Info</h4>';
+		html += '<div class="e2e-info-grid-sm">';
+		html += infoItem('Endpoint', api.endpoint || '/suggestions/suggest');
+		html += infoItem('Method', api.method || 'POST');
+		html += infoItem('Cost', api.cost || '1-4 credits');
+		html += '</div>';
+
+		$('#suggestions-info').html(html);
+
+		// Set default values in form from settings
+		if (settings.quality) {
+			$('#suggestion-quality').val(settings.quality);
+		}
+		if (settings.similarity) {
+			var simVal = (settings.similarity / 100).toFixed(2);
+			$('#suggestion-similarity').val(simVal);
+		}
+		$('#suggestion-include-answer').prop('checked', settings.show_answer !== false);
+
+		// Render example buttons
+		if (examples.length > 0) {
+			var examplesHtml = '';
+			examples.forEach(function(ex) {
+				examplesHtml += '<button type="button" class="e2e-example-btn" data-title="' + escapeHtml(ex) + '">' + escapeHtml(ex.substring(0, 40)) + (ex.length > 40 ? '...' : '') + '</button>';
+			});
+			$('#suggestion-examples').html(examplesHtml);
+		} else {
+			$('#suggestion-examples').html('<span class="e2e-example-loading">No examples available</span>');
+		}
 	}
 
 	function loadTranslatePosts() {
@@ -495,6 +562,41 @@
 		$('.e2e-run-test').on('click', runTest);
 		$('#refresh-search-history').on('click', loadSearchHistory);
 		$('#clear-search-history').on('click', clearSearchHistory);
+
+		// Suggestion events
+		$('#refresh-suggestion-history').on('click', loadSuggestionHistory);
+		$('#clear-suggestion-history').on('click', clearSuggestionHistory);
+
+		// Example suggestion buttons
+		$(document).on('click', '.e2e-example-btn', function() {
+			$('#suggestion-title').val($(this).data('title'));
+		});
+
+		// Delete suggestion test
+		$(document).on('click', '.e2e-delete-suggestion', function() {
+			var id = $(this).data('id');
+			var $row = $(this).closest('tr');
+
+			$.ajax({
+				url: wpforoE2E.ajaxUrl,
+				type: 'POST',
+				data: {
+					action: 'wpforo_e2e_delete_suggestion_test',
+					nonce: wpforoE2E.nonce,
+					id: id
+				},
+				success: function() {
+					$row.fadeOut(300, function() { $(this).remove(); });
+				}
+			});
+		});
+
+		// View JSON popup for suggestion history
+		$(document).on('click', '.e2e-view-json', function() {
+			var json = $(this).data('json');
+			var formatted = JSON.stringify(json, null, 2);
+			alert(formatted);
+		});
 	}
 
 	function loadTenantInfo() {
@@ -741,7 +843,12 @@
 					style: $('#summarize-style').val()
 				};
 			case 'suggestions':
-				return { title: $('#suggestion-title').val() };
+				return {
+					title: $('#suggestion-title').val(),
+					quality: $('#suggestion-quality').val(),
+					similarity: $('#suggestion-similarity').val(),
+					include_answer: $('#suggestion-include-answer').is(':checked') ? 1 : 0
+				};
 			case 'moderate':
 				return { content: $('#moderate-content').val() };
 			case 'chat':
@@ -790,6 +897,12 @@
 		// Special rendering for summarize results
 		if (boxId === 'result-summarize' && resultData.result) {
 			renderSummarizeResult(boxId, resultData, statusClass, statusText, duration, timestamp);
+			return;
+		}
+
+		// Special rendering for suggestions results
+		if (boxId === 'result-suggestions' && resultData.result) {
+			renderSuggestionsResult(boxId, resultData, statusClass, statusText, duration, timestamp);
 			return;
 		}
 
@@ -999,6 +1112,146 @@
 		html += '<pre>' + syntaxHighlight(JSON.stringify(data, null, 2)) + '</pre>';
 
 		$('#' + boxId).html(html);
+	}
+
+	function renderSuggestionsResult(boxId, data, statusClass, statusText, duration, timestamp) {
+		var result = data.result;
+		var response = result.response || {};
+
+		// Show result display
+		$('#suggestions-result-display').show();
+
+		// Similar topics
+		var similar = response.similar_topics || [];
+		if (similar.length > 0) {
+			$('#suggestions-similar-section').show();
+			$('#suggestions-similar-count').text(similar.length);
+			var similarHtml = '';
+			similar.forEach(function(topic) {
+				var score = topic.score || 0;
+				var scoreClass = score >= 0.7 ? 'high' : (score >= 0.5 ? 'medium' : '');
+				similarHtml += '<div class="e2e-suggestion-item">';
+				similarHtml += '<div class="e2e-suggestion-score ' + scoreClass + '">' + (score * 100).toFixed(0) + '%</div>';
+				similarHtml += '<div class="e2e-suggestion-content">';
+				similarHtml += '<div class="e2e-suggestion-title">' + escapeHtml(topic.title || '') + '</div>';
+				similarHtml += '<div class="e2e-suggestion-meta">ID: ' + topic.topic_id + ' | Posts: ' + (topic.posts || 0) + '</div>';
+				similarHtml += '</div></div>';
+			});
+			$('#suggestions-similar-list').html(similarHtml);
+		} else {
+			$('#suggestions-similar-section').hide();
+		}
+
+		// Related topics
+		var related = response.related_topics || [];
+		if (related.length > 0) {
+			$('#suggestions-related-section').show();
+			$('#suggestions-related-count').text(related.length);
+			var relatedHtml = '';
+			related.forEach(function(topic) {
+				var score = topic.score || 0;
+				var scoreClass = score >= 0.6 ? 'high' : (score >= 0.4 ? 'medium' : '');
+				relatedHtml += '<div class="e2e-suggestion-item">';
+				relatedHtml += '<div class="e2e-suggestion-score ' + scoreClass + '">' + (score * 100).toFixed(0) + '%</div>';
+				relatedHtml += '<div class="e2e-suggestion-content">';
+				relatedHtml += '<div class="e2e-suggestion-title">' + escapeHtml(topic.title || '') + '</div>';
+				relatedHtml += '<div class="e2e-suggestion-meta">ID: ' + topic.topic_id + '</div>';
+				relatedHtml += '</div></div>';
+			});
+			$('#suggestions-related-list').html(relatedHtml);
+		} else {
+			$('#suggestions-related-section').hide();
+		}
+
+		// AI Answer
+		var aiAnswer = response.ai_answer || '';
+		if (aiAnswer) {
+			$('#suggestions-answer-section').show();
+			$('#suggestions-answer-content').html(aiAnswer);
+		} else {
+			$('#suggestions-answer-section').hide();
+		}
+
+		// Show JSON result
+		var html = '<div class="e2e-result-meta">' +
+			'<span class="' + statusClass + '">' + statusText + '</span> | ' +
+			duration + ' | ' + timestamp;
+
+		if (result.credits_used) {
+			html += ' | Credits: ' + result.credits_used;
+		}
+		html += '</div>';
+
+		html += '<pre>' + syntaxHighlight(JSON.stringify(data, null, 2)) + '</pre>';
+
+		$('#' + boxId).html(html);
+
+		// Reload history after test
+		loadSuggestionHistory();
+	}
+
+	function loadSuggestionHistory() {
+		var $tbody = $('#suggestion-history-body');
+		$tbody.html('<tr><td colspan="11" class="e2e-loading">Loading...</td></tr>');
+
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_get_suggestion_history',
+				nonce: wpforoE2E.nonce,
+				limit: 50
+			},
+			success: function(response) {
+				if (response.success && response.data.length > 0) {
+					var html = '';
+					response.data.forEach(function(row) {
+						var date = new Date(row.created_at).toLocaleString();
+						var hasAnswer = row.has_answer ? '✓' : '-';
+						var topScore = row.top_score ? (row.top_score * 100).toFixed(0) + '%' : '-';
+
+						html += '<tr data-id="' + row.id + '">';
+						html += '<td>' + date + '</td>';
+						html += '<td class="e2e-query-cell" title="' + escapeHtml(row.query) + '">' + escapeHtml(row.query.substring(0, 30)) + (row.query.length > 30 ? '...' : '') + '</td>';
+						html += '<td>' + row.quality + '</td>';
+						html += '<td>' + (row.similarity * 100).toFixed(0) + '%</td>';
+						html += '<td>' + row.total_similar + '</td>';
+						html += '<td>' + row.total_related + '</td>';
+						html += '<td>' + hasAnswer + '</td>';
+						html += '<td>' + topScore + '</td>';
+						html += '<td>' + row.query_time_ms + 'ms</td>';
+						html += '<td>' + row.credits_used + '</td>';
+						html += '<td>';
+						html += '<button class="button button-small e2e-view-json" data-json="' + escapeHtml(JSON.stringify(row.results)) + '">JSON</button> ';
+						html += '<button class="button button-small e2e-delete-suggestion" data-id="' + row.id + '">Delete</button>';
+						html += '</td>';
+						html += '</tr>';
+					});
+					$tbody.html(html);
+				} else {
+					$tbody.html('<tr><td colspan="11" class="e2e-empty">No history yet</td></tr>');
+				}
+			},
+			error: function() {
+				$tbody.html('<tr><td colspan="11" class="e2e-error">Error loading history</td></tr>');
+			}
+		});
+	}
+
+	function clearSuggestionHistory() {
+		if (!confirm('Clear all suggestion test history?')) return;
+
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_clear_suggestion_history',
+				nonce: wpforoE2E.nonce
+			},
+			success: function() {
+				loadSuggestionHistory();
+			}
+		});
 	}
 
 	function formatSummaryContent(text) {
