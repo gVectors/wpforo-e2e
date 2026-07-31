@@ -746,42 +746,60 @@ class WPForo_E2E_Tester {
 		// Get indexed topic stats
 		$board_id = WPF()->board->get_current( 'boardid' );
 		$storage_mode = WPF()->vector_storage ? WPF()->vector_storage->get_storage_mode( $board_id ) : 'local';
+		$is_local_mode = $storage_mode === 'local';
 		$total_topics = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}wpforo_topics" );
 
-		// Get example queries from topic titles (1 word, 2 words, 3 words)
+		// Build indexed filter based on storage mode
+		// Local mode: topics with entries in ai_embeddings table
+		// Cloud mode: topics with cloud = 1 in wpforo_topics
+		if ( $is_local_mode ) {
+			$indexed_join = "INNER JOIN (SELECT DISTINCT topicid FROM {$wpdb->prefix}wpforo_ai_embeddings) e ON t.topicid = e.topicid";
+			$indexed_filter = "";
+		} else {
+			$indexed_join = "";
+			$indexed_filter = "AND t.cloud = 1";
+		}
+
+		// Get example queries from INDEXED topic titles (1 word, 2 words, 3 words)
 		$examples = [];
 
 		// 1 word example
 		$one_word = $wpdb->get_var(
-			"SELECT title FROM {$wpdb->prefix}wpforo_topics
-			 WHERE LENGTH(title) - LENGTH(REPLACE(title, ' ', '')) = 0
-			 AND LENGTH(title) > 3
+			"SELECT t.title FROM {$wpdb->prefix}wpforo_topics t
+			 {$indexed_join}
+			 WHERE LENGTH(t.title) - LENGTH(REPLACE(t.title, ' ', '')) = 0
+			 AND LENGTH(t.title) > 3 {$indexed_filter}
 			 ORDER BY RAND() LIMIT 1"
 		);
 		if ( $one_word ) $examples[] = $one_word;
 
 		// 2 words example
 		$two_words = $wpdb->get_var(
-			"SELECT title FROM {$wpdb->prefix}wpforo_topics
-			 WHERE LENGTH(title) - LENGTH(REPLACE(title, ' ', '')) = 1
+			"SELECT t.title FROM {$wpdb->prefix}wpforo_topics t
+			 {$indexed_join}
+			 WHERE LENGTH(t.title) - LENGTH(REPLACE(t.title, ' ', '')) = 1 {$indexed_filter}
 			 ORDER BY RAND() LIMIT 1"
 		);
 		if ( $two_words ) $examples[] = $two_words;
 
 		// 3 words example
 		$three_words = $wpdb->get_var(
-			"SELECT title FROM {$wpdb->prefix}wpforo_topics
-			 WHERE LENGTH(title) - LENGTH(REPLACE(title, ' ', '')) = 2
+			"SELECT t.title FROM {$wpdb->prefix}wpforo_topics t
+			 {$indexed_join}
+			 WHERE LENGTH(t.title) - LENGTH(REPLACE(t.title, ' ', '')) = 2 {$indexed_filter}
 			 ORDER BY RAND() LIMIT 1"
 		);
 		if ( $three_words ) $examples[] = $three_words;
 
-		// Fill remaining with random titles if needed
+		// Fill remaining with random indexed titles
 		$attempts = 0;
 		while ( count( $examples ) < 5 && $attempts < 10 ) {
 			$attempts++;
 			$random = $wpdb->get_var(
-				"SELECT title FROM {$wpdb->prefix}wpforo_topics ORDER BY RAND() LIMIT 1"
+				"SELECT t.title FROM {$wpdb->prefix}wpforo_topics t
+				 {$indexed_join}
+				 WHERE 1=1 {$indexed_filter}
+				 ORDER BY RAND() LIMIT 1"
 			);
 			if ( $random && ! in_array( $random, $examples ) ) {
 				$examples[] = $random;
