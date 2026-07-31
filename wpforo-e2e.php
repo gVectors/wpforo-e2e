@@ -776,18 +776,14 @@ class WPForo_E2E_Tester {
 		if ( $three_words ) $examples[] = $three_words;
 
 		// Fill remaining with random titles if needed
-		while ( count( $examples ) < 5 ) {
+		$attempts = 0;
+		while ( count( $examples ) < 5 && $attempts < 10 ) {
+			$attempts++;
 			$random = $wpdb->get_var(
-				$wpdb->prepare(
-					"SELECT title FROM {$wpdb->prefix}wpforo_topics
-					 WHERE title NOT IN (%s) ORDER BY RAND() LIMIT 1",
-					implode( ',', array_map( 'esc_sql', $examples ) )
-				)
+				"SELECT title FROM {$wpdb->prefix}wpforo_topics ORDER BY RAND() LIMIT 1"
 			);
 			if ( $random && ! in_array( $random, $examples ) ) {
 				$examples[] = $random;
-			} else {
-				break;
 			}
 		}
 
