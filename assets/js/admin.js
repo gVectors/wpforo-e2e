@@ -1142,20 +1142,17 @@
 			$('#suggestions-similar-section').hide();
 		}
 
-		// Related topics
+		// Related topics (AI-generated, have reason instead of score)
 		var related = response.related_topics || [];
 		if (related.length > 0) {
 			$('#suggestions-related-section').show();
 			$('#suggestions-related-count').text(related.length);
 			var relatedHtml = '';
 			related.forEach(function(topic) {
-				var score = topic.score || 0;
-				var scoreClass = score >= 0.6 ? 'high' : (score >= 0.4 ? 'medium' : '');
 				relatedHtml += '<div class="e2e-suggestion-item">';
-				relatedHtml += '<div class="e2e-suggestion-score ' + scoreClass + '">' + (score * 100).toFixed(0) + '%</div>';
-				relatedHtml += '<div class="e2e-suggestion-content">';
+				relatedHtml += '<div class="e2e-suggestion-content" style="flex:1;">';
 				relatedHtml += '<div class="e2e-suggestion-title">' + escapeHtml(topic.title || '') + '</div>';
-				relatedHtml += '<div class="e2e-suggestion-meta">ID: ' + topic.topic_id + '</div>';
+				relatedHtml += '<div class="e2e-suggestion-meta">' + escapeHtml(topic.reason || '') + '</div>';
 				relatedHtml += '</div></div>';
 			});
 			$('#suggestions-related-list').html(relatedHtml);
