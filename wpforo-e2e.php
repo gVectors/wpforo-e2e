@@ -2026,7 +2026,7 @@ class WPForo_E2E_Tester {
 			$related = $response['related_topics'] ?? [];
 			$total_similar = count( $similar );
 			$total_related = count( $related );
-			$has_answer = ! empty( $response['ai_answer'] );
+			$has_answer = ! empty( $response['ai_insight'] ) || ! empty( $response['quick_answer'] );
 			$credits_used = $response['credits_used'] ?? 0;
 
 			if ( ! empty( $similar ) && isset( $similar[0]['score'] ) ) {

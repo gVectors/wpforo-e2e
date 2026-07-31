@@ -1164,7 +1164,7 @@
 		}
 
 		// AI Answer
-		var aiAnswer = response.ai_answer || '';
+		var aiAnswer = response.ai_insight || response.quick_answer || '';
 		if (aiAnswer) {
 			$('#suggestions-answer-section').show();
 			$('#suggestions-answer-content').html(aiAnswer);
