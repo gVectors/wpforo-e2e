@@ -61,6 +61,12 @@
 		if (tab === 'suggestions') {
 			loadSuggestionHistory();
 		}
+
+		// Load moderate tab content
+		if (tab === 'moderate') {
+			loadModerateInfo();
+			loadSpamHistory();
+		}
 	}
 
 	function loadFeatureInfo(tab) {
@@ -591,12 +597,184 @@
 			});
 		});
 
-		// View JSON popup for suggestion history
+		// View JSON popup
 		$(document).on('click', '.e2e-view-json', function() {
 			var json = $(this).data('json');
-			var formatted = JSON.stringify(json, null, 2);
-			alert(formatted);
+			showJsonModal(json);
 		});
+
+		// Moderation events - spam example buttons
+		$(document).on('click', '.e2e-spam-example', function() {
+			var content = $(this).data('content');
+			$('#spam-content').val(content);
+		});
+
+		// Toxicity example buttons
+		$(document).on('click', '.e2e-toxic-example', function() {
+			var content = $(this).data('content');
+			$('#toxic-content').val(content);
+		});
+
+		// Moderation history refresh
+		$('#refresh-moderation-history').on('click', loadSpamHistory);
+
+		// Delete moderation test
+		$(document).on('click', '.e2e-delete-moderation', function() {
+			var id = $(this).data('id');
+			deleteModerationTest(id);
+		});
+
+		// Clear moderation history
+		$(document).on('click', '.e2e-clear-history[data-type="moderation"]', function() {
+			clearModerationHistory();
+		});
+
+		// Moderation history details
+		$('#spam-history-body').on('click', '.e2e-expand-btn', function() {
+			var json = $(this).data('json');
+			showJsonModal(json);
+		});
+
+		// Analytics buttons
+		$('.e2e-run-analytics').on('click', function() {
+			var $btn = $(this);
+			var insightType = $btn.data('type');
+			var limit = $('#analytics-' + insightType + '-limit').val();
+			var resultBoxId = 'result-analytics-' + insightType;
+
+			$btn.addClass('is-loading');
+			$('#' + resultBoxId).html('<div class="e2e-loading">Running analysis...</div>');
+
+			$.ajax({
+				url: wpforoE2E.ajaxUrl,
+				type: 'POST',
+				data: {
+					action: 'wpforo_e2e_run_test',
+					nonce: wpforoE2E.nonce,
+					test_type: 'analytics_insight',
+					params: {
+						insight_type: insightType,
+						limit: limit
+					}
+				},
+				success: function(response) {
+					$btn.removeClass('is-loading');
+					renderAnalyticsResult(resultBoxId, insightType, response);
+				},
+				error: function(xhr, status, error) {
+					$btn.removeClass('is-loading');
+					$('#' + resultBoxId).html('<div class="e2e-result-meta error">Connection error: ' + error + '</div>');
+				}
+			});
+		});
+	}
+
+	function renderAnalyticsResult(boxId, insightType, response) {
+		var isSuccess = response.success && response.data && response.data.result;
+		var statusClass = isSuccess ? 'success' : 'error';
+		var statusText = isSuccess ? 'SUCCESS' : 'FAILED';
+
+		var html = '<div class="e2e-result-meta">';
+		html += '<span class="' + statusClass + '">' + statusText + '</span>';
+
+		if (response.data && response.data.duration_ms) {
+			html += ' | ' + response.data.duration_ms + 'ms';
+		}
+		if (response.data && response.data.result && response.data.result.credits_used) {
+			html += ' | Credits: ' + response.data.result.credits_used;
+		}
+		html += '</div>';
+
+		if (isSuccess) {
+			var result = response.data.result;
+			var data = result.data || {};
+
+			// Human-readable summary based on insight type
+			html += '<div style="padding:10px 15px;background:#2d3338;color:#fff;">';
+
+			if (insightType === 'sentiment' && data.emotions) {
+				html += '<strong>Dominant Emotion:</strong> ' + (data.dominant_emotion || '-') + '<br>';
+				html += '<strong>Overall:</strong> ' + (data.overall_sentiment || '-') + '<br>';
+				html += '<div style="margin-top:8px;"><strong>Emotions:</strong></div>';
+				html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:5px;">';
+				for (var emotion in data.emotions) {
+					var val = data.emotions[emotion];
+					html += '<span style="background:#374151;padding:3px 8px;border-radius:3px;">' + emotion + ': ' + val + '%</span>';
+				}
+				html += '</div>';
+			} else if (insightType === 'trending' && data.topics) {
+				html += '<strong>Trending Topics:</strong><br>';
+				html += '<ul style="margin:5px 0 0 20px;padding:0;">';
+				data.topics.forEach(function(topic) {
+					html += '<li>' + escapeHtml(topic.name || topic) + (topic.score ? ' (' + topic.score + ')' : '') + '</li>';
+				});
+				html += '</ul>';
+			} else if (insightType === 'recommendations' && data.recommendations) {
+				html += '<strong>Recommendations:</strong><br>';
+				html += '<ul style="margin:5px 0 0 20px;padding:0;">';
+				data.recommendations.forEach(function(rec) {
+					html += '<li>' + escapeHtml(typeof rec === 'string' ? rec : rec.title || rec.recommendation || JSON.stringify(rec)) + '</li>';
+				});
+				html += '</ul>';
+			} else if (insightType === 'deep_analysis') {
+				html += '<strong>Summary:</strong> ' + escapeHtml(data.summary || data.overview || '-') + '<br>';
+				if (data.key_findings) {
+					html += '<strong>Key Findings:</strong><br><ul style="margin:5px 0 0 20px;padding:0;">';
+					data.key_findings.forEach(function(f) {
+						html += '<li>' + escapeHtml(typeof f === 'string' ? f : f.finding || JSON.stringify(f)) + '</li>';
+					});
+					html += '</ul>';
+				}
+			} else if (insightType === 'sentiment_trend' && data.trend) {
+				html += '<strong>Trend Direction:</strong> ' + (data.trend.direction || '-') + '<br>';
+				html += '<strong>Change:</strong> ' + (data.trend.change || '-') + '<br>';
+				if (data.periods) {
+					html += '<strong>Periods:</strong><br><ul style="margin:5px 0 0 20px;padding:0;">';
+					data.periods.forEach(function(p) {
+						html += '<li>' + escapeHtml(p.period || p.label || '-') + ': ' + (p.sentiment || p.score || '-') + '</li>';
+					});
+					html += '</ul>';
+				}
+			} else {
+				html += '<em>See JSON below for details</em>';
+			}
+
+			html += '</div>';
+		}
+
+		// JSON details
+		html += '<details style="margin-top:0;"><summary style="padding:8px 15px;background:#1d2327;color:#3b82f6;cursor:pointer;">Show JSON</summary>';
+		html += '<pre style="margin:0;padding:15px;">' + syntaxHighlight(JSON.stringify(response.data, null, 2)) + '</pre>';
+		html += '</details>';
+
+		$('#' + boxId).html(html);
+	}
+
+	function showJsonModal(json) {
+		var formatted = syntaxHighlight(JSON.stringify(json, null, 2));
+		var $modal = $('#e2e-json-modal');
+
+		if (!$modal.length) {
+			$('body').append(
+				'<div id="e2e-json-modal" class="e2e-modal-overlay">' +
+					'<div class="e2e-modal">' +
+						'<div class="e2e-modal-header">' +
+							'<span>JSON Response</span>' +
+							'<button type="button" class="e2e-modal-close">&times;</button>' +
+						'</div>' +
+						'<div class="e2e-modal-body"><pre></pre></div>' +
+					'</div>' +
+				'</div>'
+			);
+			$modal = $('#e2e-json-modal');
+
+			$modal.on('click', '.e2e-modal-close, .e2e-modal-overlay', function(e) {
+				if (e.target === this) $modal.hide();
+			});
+		}
+
+		$modal.find('pre').html(formatted);
+		$modal.show();
 	}
 
 	function loadTenantInfo() {
@@ -851,6 +1029,19 @@
 				};
 			case 'moderate':
 				return { content: $('#moderate-content').val() };
+			case 'spam':
+				return {
+					test_type: 'spam',
+					content: $('#spam-content').val(),
+					quality: $('#spam-quality').val()
+				};
+			case 'toxic':
+				return {
+					test_type: 'toxic',
+					content: $('#toxic-content').val(),
+					quality: $('#toxic-quality').val(),
+					sensitivity: $('#toxic-sensitivity').val()
+				};
 			case 'chat':
 				return { message: $('#chat-message').val() };
 			default:
@@ -866,6 +1057,8 @@
 			'summarize': 'result-summarize',
 			'suggestions': 'result-suggestions',
 			'moderate': 'result-moderate',
+			'spam': 'result-spam',
+			'toxic': 'result-toxic',
 			'chat': 'result-chat',
 			'rag_status': 'result-rag',
 			'analytics': 'result-analytics'
@@ -903,6 +1096,26 @@
 		// Special rendering for suggestions results
 		if (boxId === 'result-suggestions' && resultData.result) {
 			renderSuggestionsResult(boxId, resultData, statusClass, statusText, duration, timestamp);
+			return;
+		}
+
+		// Special rendering for spam results
+		if (boxId === 'result-spam' && resultData.result) {
+			renderSpamResult(boxId, resultData, statusClass, statusText, duration, timestamp);
+			loadSpamHistory();
+			return;
+		}
+
+		// Special rendering for toxic results
+		if (boxId === 'result-toxic' && resultData.result) {
+			renderToxicResult(boxId, resultData, statusClass, statusText, duration, timestamp);
+			loadSpamHistory();
+			return;
+		}
+
+		// Special rendering for RAG status
+		if (boxId === 'result-rag' && resultData.result) {
+			renderRagStatus(boxId, resultData, statusClass, statusText, duration, timestamp);
 			return;
 		}
 
@@ -1187,6 +1400,173 @@
 		loadSuggestionHistory();
 	}
 
+	function renderSpamResult(boxId, data, statusClass, statusText, duration, timestamp) {
+		var result = data.result;
+
+		var isSpam = result.is_spam;
+		var spamScore = result.spam_score || 0;
+		var confidence = result.confidence || 0;
+		var indicators = result.indicators || [];
+		var analysis = result.analysis_summary || '';
+
+		// Verdict badge
+		var verdictClass = isSpam ? 'error' : 'success';
+		var verdictText = isSpam ? 'SPAM DETECTED' : 'NOT SPAM';
+
+		var html = '<div class="e2e-result-meta">' +
+			'<span class="' + statusClass + '">' + statusText + '</span> | ' +
+			duration + ' | ' + timestamp;
+
+		if (result.credits_used) {
+			html += ' | Credits: ' + result.credits_used;
+		}
+		html += '</div>';
+
+		// Spam result summary
+		html += '<div class="e2e-spam-result">';
+		html += '<div class="e2e-spam-verdict ' + verdictClass + '">' + verdictText + '</div>';
+		html += '<div class="e2e-spam-scores">';
+		html += '<div class="e2e-spam-score-item"><span class="label">Spam Score:</span> <span class="value">' + spamScore + '</span></div>';
+		html += '<div class="e2e-spam-score-item"><span class="label">Confidence:</span> <span class="value">' + (confidence * 100).toFixed(0) + '%</span></div>';
+		html += '<div class="e2e-spam-score-item"><span class="label">Quality:</span> <span class="value">' + (result.quality || '-') + '</span></div>';
+		html += '</div>';
+
+		// Indicators
+		if (indicators.length > 0) {
+			html += '<div class="e2e-spam-indicators"><strong>Indicators:</strong> ' + escapeHtml(indicators.join(', ')) + '</div>';
+		}
+
+		// Analysis
+		if (analysis) {
+			html += '<div class="e2e-spam-analysis"><strong>Analysis:</strong> ' + escapeHtml(analysis) + '</div>';
+		}
+
+		html += '</div>';
+
+		// Full JSON
+		html += '<details><summary>Full Response JSON</summary>';
+		html += '<pre>' + syntaxHighlight(JSON.stringify(data, null, 2)) + '</pre>';
+		html += '</details>';
+
+		$('#' + boxId).html(html);
+	}
+
+	function renderRagStatus(boxId, data, statusClass, statusText, duration, timestamp) {
+		var result = data.result;
+
+		// Show the status display
+		$('#rag-status-display').show();
+
+		// Indexing status
+		var isIndexing = result.is_indexing;
+		var statusHtml = isIndexing
+			? '<span class="e2e-badge" style="background:#fef3c7;color:#92400e;">Indexing in Progress</span>'
+			: '<span class="e2e-badge success">Idle</span>';
+		$('#rag-is-indexing').html(statusHtml);
+
+		// Total indexed
+		$('#rag-total-indexed').text((result.total_indexed || 0) + ' topics');
+
+		// Last indexed
+		var lastIndexed = result.last_indexed_at;
+		if (lastIndexed) {
+			var d = new Date(lastIndexed);
+			$('#rag-last-indexed').text(d.toLocaleString());
+		} else {
+			$('#rag-last-indexed').text('Never');
+		}
+
+		// Progress
+		var progress = result.indexing_progress || 0;
+		if (isIndexing) {
+			$('#rag-progress').html('<strong>' + progress + '%</strong>');
+		} else {
+			$('#rag-progress').text('-');
+		}
+
+		// Queue info
+		var queue = result.queue_info || {};
+		$('#rag-queue-pending').text(queue.pending || 0);
+		$('#rag-queue-processing').text(queue.processing || 0);
+		var failedCount = queue.failed || 0;
+		$('#rag-queue-failed').html(failedCount > 0
+			? '<span style="color:#dc2626;">' + failedCount + '</span>'
+			: '0');
+
+		// Media progress
+		var media = result.media_progress;
+		if (media && media.total > 0) {
+			$('#rag-media-section').show();
+			$('#rag-media-total').text(media.total);
+			$('#rag-media-done').text(media.done + ' (' + media.progress_percent + '%)');
+			$('#rag-media-failed').html(media.failed > 0
+				? '<span style="color:#dc2626;">' + media.failed + '</span>'
+				: '0');
+			$('#rag-media-skipped').text(media.skipped_cancelled || 0);
+		} else {
+			$('#rag-media-section').hide();
+		}
+
+		// Show raw JSON
+		var html = '<div class="e2e-result-meta">' +
+			'<span class="' + statusClass + '">' + statusText + '</span> | ' +
+			duration + ' | ' + timestamp +
+		'</div>';
+		html += '<pre>' + syntaxHighlight(JSON.stringify(data, null, 2)) + '</pre>';
+		$('#' + boxId).html(html);
+	}
+
+	function renderToxicResult(boxId, data, statusClass, statusText, duration, timestamp) {
+		var result = data.result;
+
+		var isToxic = result.is_toxic;
+		var toxicityScore = result.toxicity_score || 0;
+		var confidence = result.confidence || 0;
+		var categories = result.categories || [];
+		var analysis = result.analysis_summary || '';
+
+		// Verdict badge
+		var verdictClass = isToxic ? 'error' : 'success';
+		var verdictText = isToxic ? 'TOXIC CONTENT' : 'CLEAN';
+
+		var html = '<div class="e2e-result-meta">' +
+			'<span class="' + statusClass + '">' + statusText + '</span> | ' +
+			duration + ' | ' + timestamp;
+
+		if (result.credits_used) {
+			html += ' | Credits: ' + result.credits_used;
+		}
+		html += '</div>';
+
+		// Toxic result summary
+		html += '<div class="e2e-spam-result">';
+		html += '<div class="e2e-spam-verdict ' + verdictClass + '">' + verdictText + '</div>';
+		html += '<div class="e2e-spam-scores">';
+		html += '<div class="e2e-spam-score-item"><span class="label">Toxicity Score:</span> <span class="value">' + toxicityScore + '</span></div>';
+		html += '<div class="e2e-spam-score-item"><span class="label">Confidence:</span> <span class="value">' + (confidence * 100).toFixed(0) + '%</span></div>';
+		html += '<div class="e2e-spam-score-item"><span class="label">Sensitivity:</span> <span class="value">' + (result.sensitivity || '-') + '</span></div>';
+		html += '</div>';
+
+		// Categories
+		if (categories.length > 0) {
+			html += '<div class="e2e-spam-indicators"><strong>Categories:</strong> ' + escapeHtml(categories.join(', ')) + '</div>';
+		}
+
+		// Analysis
+		if (analysis) {
+			html += '<div class="e2e-spam-analysis"><strong>Analysis:</strong> ' + escapeHtml(analysis) + '</div>';
+		}
+
+		html += '</div>';
+
+		// Full JSON
+		html += '<details><summary>Full Response JSON</summary>';
+		html += '<pre>' + syntaxHighlight(JSON.stringify(data, null, 2)) + '</pre>';
+		html += '</details>';
+
+		$('#' + boxId).html(html);
+	}
+
 	function loadSuggestionHistory() {
 		var $tbody = $('#suggestion-history-body');
 		$tbody.html('<tr><td colspan="11" class="e2e-loading">Loading...</td></tr>');
@@ -1247,6 +1627,196 @@
 			},
 			success: function() {
 				loadSuggestionHistory();
+			}
+		});
+	}
+
+	// =========================
+	// MODERATION FUNCTIONS
+	// =========================
+
+	function loadModerateInfo() {
+		var $loading = $('#moderate-info-loading');
+		var $infoBox = $('#moderate-settings-info');
+
+		if ($infoBox.data('loaded')) return;
+
+		$loading.show();
+		$infoBox.hide();
+
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_get_feature_info',
+				nonce: wpforoE2E.nonce,
+				feature: 'moderate'
+			},
+			success: function(response) {
+				$loading.hide();
+				if (response.success) {
+					var data = response.data;
+					var spam = data.settings && data.settings.spam ? data.settings.spam : {};
+					var policy = data.settings && data.settings.policy ? data.settings.policy : {};
+					var toxicity = data.settings && data.settings.toxicity ? data.settings.toxicity : {};
+					var spamExamples = data.examples && data.examples.spam ? data.examples.spam : [];
+					var toxicExamples = data.examples && data.examples.toxic ? data.examples.toxic : [];
+
+					// Spam settings
+					$('#mod-spam-enabled').html(spam.enabled ? '<span class="e2e-badge success">Enabled</span>' : '<span class="e2e-badge error">Disabled</span>');
+					$('#mod-spam-quality').text(spam.quality || 'balanced');
+					$('#mod-spam-threshold').text(spam.min_indexed || '-');
+					$('#mod-spam-context').text(spam.use_context ? 'Yes' : 'No');
+
+					// Policy settings
+					$('#mod-policy-enabled').html(policy.enabled ? '<span class="e2e-badge success">Enabled</span>' : '<span class="e2e-badge error">Disabled</span>');
+					$('#mod-policy-quality').text(policy.quality || 'balanced');
+
+					// Toxicity settings
+					$('#mod-toxicity-enabled').html(toxicity.enabled ? '<span class="e2e-badge success">Enabled</span>' : '<span class="e2e-badge error">Disabled</span>');
+					$('#mod-toxicity-quality').text(toxicity.sensitivity || 'medium');
+
+					// Policy rules - show placeholder for now
+					$('#mod-policy-rules').text(policy.enabled ? 'Enabled' : 'No rules configured');
+
+					// Set spam quality selector to match settings
+					if (spam.quality) {
+						$('#spam-quality').val(spam.quality);
+					}
+
+					// Set toxicity sensitivity selector to match settings
+					if (toxicity.sensitivity) {
+						$('#toxic-sensitivity').val(toxicity.sensitivity);
+					}
+
+					// Load examples
+					loadSpamExamples(spamExamples);
+					loadToxicExamples(toxicExamples);
+
+					$infoBox.show().data('loaded', true);
+				} else {
+					$loading.text('Error loading settings');
+				}
+			},
+			error: function() {
+				$loading.text('Connection error');
+			}
+		});
+	}
+
+	function loadSpamExamples(examples) {
+		var $container = $('#spam-examples');
+
+		if (examples.length === 0) {
+			$container.html('<span class="e2e-no-examples">No example content available</span>');
+			return;
+		}
+
+		var html = '';
+		examples.forEach(function(ex, idx) {
+			var label = ex.label || 'Example ' + (idx + 1);
+			var shortLabel = label.length > 20 ? label.substring(0, 20) + '...' : label;
+			html += '<button type="button" class="button button-small e2e-spam-example" data-content="' + escapeHtml(ex.content || '') + '" title="' + escapeHtml(label) + '">' + escapeHtml(shortLabel) + '</button>';
+		});
+		$container.html(html);
+	}
+
+	function loadToxicExamples(examples) {
+		var $container = $('#toxic-examples');
+
+		if (examples.length === 0) {
+			$container.html('<span class="e2e-no-examples">No example content available</span>');
+			return;
+		}
+
+		var html = '';
+		examples.forEach(function(ex, idx) {
+			var label = ex.label || 'Example ' + (idx + 1);
+			var shortLabel = label.length > 20 ? label.substring(0, 20) + '...' : label;
+			html += '<button type="button" class="button button-small e2e-toxic-example" data-content="' + escapeHtml(ex.content || '') + '" title="' + escapeHtml(label) + '">' + escapeHtml(shortLabel) + '</button>';
+		});
+		$container.html(html);
+	}
+
+	function loadSpamHistory() {
+		var $tbody = $('#spam-history-body');
+		$tbody.html('<tr><td colspan="9" class="e2e-loading">Loading...</td></tr>');
+
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_get_moderation_history',
+				nonce: wpforoE2E.nonce,
+				limit: 50
+			},
+			success: function(response) {
+				if (response.success && response.data.length > 0) {
+					var html = '';
+					response.data.forEach(function(row) {
+						var date = formatDate(row.created_at);
+						var testType = row.test_type || 'spam';
+						var result = '-';
+						if (testType === 'spam') {
+							result = row.is_spam ? '<span class="e2e-badge error">Spam</span>' : '<span class="e2e-badge success">Clean</span>';
+						} else if (testType === 'toxic') {
+							result = row.is_spam ? '<span class="e2e-badge error">Toxic</span>' : '<span class="e2e-badge success">Clean</span>';
+						}
+						var score = row.spam_score !== null ? row.spam_score : '-';
+
+						html += '<tr data-id="' + row.id + '">';
+						html += '<td>' + date + '</td>';
+						html += '<td>' + testType + '</td>';
+						html += '<td class="query-cell" title="' + escapeHtml(row.content) + '">' + escapeHtml((row.content || '').substring(0, 40)) + '</td>';
+						html += '<td>' + (row.quality || '-') + '</td>';
+						html += '<td>' + score + '</td>';
+						html += '<td>' + result + '</td>';
+						html += '<td>' + (row.query_time_ms || '-') + 'ms</td>';
+						html += '<td>' + (row.credits_used || '-') + '</td>';
+						html += '<td>';
+						html += '<span class="e2e-expand-btn" data-json="' + escapeHtml(JSON.stringify(row.results || {})) + '">Details</span>';
+						html += '<span class="e2e-delete-btn e2e-delete-moderation" data-id="' + row.id + '">Delete</span>';
+						html += '</td>';
+						html += '</tr>';
+					});
+					$tbody.html(html);
+				} else {
+					$tbody.html('<tr><td colspan="9" class="e2e-empty">No moderation tests yet</td></tr>');
+				}
+			},
+			error: function() {
+				$tbody.html('<tr><td colspan="9" class="e2e-error">Error loading history</td></tr>');
+			}
+		});
+	}
+
+	function clearModerationHistory() {
+		if (!confirm('Clear all moderation test history?')) return;
+
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_clear_moderation_history',
+				nonce: wpforoE2E.nonce
+			},
+			success: function() {
+				loadSpamHistory();
+			}
+		});
+	}
+
+	function deleteModerationTest(id) {
+		$.ajax({
+			url: wpforoE2E.ajaxUrl,
+			type: 'POST',
+			data: {
+				action: 'wpforo_e2e_delete_moderation_test',
+				nonce: wpforoE2E.nonce,
+				id: id
+			},
+			success: function() {
+				loadSpamHistory();
 			}
 		});
 	}

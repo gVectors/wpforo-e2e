@@ -427,15 +427,114 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 		<!-- Moderate Tab -->
 		<div class="e2e-tab-content" data-tab="moderate">
-			<div class="e2e-panel">
-				<h2>Content Moderation</h2>
-				<div class="e2e-form-row">
-					<textarea id="moderate-content" placeholder="Content to moderate..." style="flex:1;min-height:60px;">This is a test message for moderation check.</textarea>
+			<!-- Settings Info -->
+			<div class="e2e-panel e2e-info-panel">
+				<h2>Content Moderation Settings</h2>
+				<div class="e2e-loading" id="moderate-info-loading">Loading...</div>
+				<div id="moderate-settings-info" style="display:none;">
+					<div class="e2e-info-grid">
+						<div class="e2e-info-item"><span class="label">Spam Detection:</span><span class="value" id="mod-spam-enabled">-</span></div>
+						<div class="e2e-info-item"><span class="label">Spam Quality:</span><span class="value" id="mod-spam-quality">-</span></div>
+						<div class="e2e-info-item"><span class="label">Spam Threshold:</span><span class="value" id="mod-spam-threshold">-</span></div>
+						<div class="e2e-info-item"><span class="label">Forum Context:</span><span class="value" id="mod-spam-context">-</span></div>
+						<div class="e2e-info-item"><span class="label">Policy Check:</span><span class="value" id="mod-policy-enabled">-</span></div>
+						<div class="e2e-info-item"><span class="label">Policy Quality:</span><span class="value" id="mod-policy-quality">-</span></div>
+						<div class="e2e-info-item"><span class="label">Toxicity Check:</span><span class="value" id="mod-toxicity-enabled">-</span></div>
+						<div class="e2e-info-item"><span class="label">Toxicity Quality:</span><span class="value" id="mod-toxicity-quality">-</span></div>
+						<div class="e2e-info-item full-width"><span class="label">Policy Rules:</span><span class="value" id="mod-policy-rules">-</span></div>
+					</div>
 				</div>
-				<div class="e2e-form-row">
-					<button type="button" class="button button-primary e2e-run-test" data-test="moderate">Check Moderation</button>
+			</div>
+
+			<!-- Two Column Layout for Spam and Toxicity -->
+			<div class="e2e-moderation-grid">
+				<!-- Spam Detection Form -->
+				<div class="e2e-panel">
+					<h2>Spam Detection Test</h2>
+					<div class="e2e-form-row">
+						<label>Quality:</label>
+						<select id="spam-quality">
+							<option value="fast">Fast</option>
+							<option value="balanced" selected>Balanced</option>
+							<option value="advanced">Advanced</option>
+							<option value="premium">Premium</option>
+						</select>
+					</div>
+					<div class="e2e-form-row">
+						<label>Examples:</label>
+						<div class="e2e-example-buttons" id="spam-examples">
+							<span class="e2e-loading-inline">Loading...</span>
+						</div>
+					</div>
+					<div class="e2e-form-row">
+						<textarea id="spam-content" placeholder="Enter content to check for spam..." style="flex:1;min-height:80px;"></textarea>
+					</div>
+					<div class="e2e-form-row">
+						<button type="button" class="button button-primary e2e-run-test" data-test="spam">Check for Spam</button>
+					</div>
+					<div class="e2e-result-box" id="result-spam"></div>
 				</div>
-				<div class="e2e-result-box" id="result-moderate"></div>
+
+				<!-- Toxicity Detection Form -->
+				<div class="e2e-panel">
+					<h2>Toxicity Detection Test</h2>
+					<div class="e2e-form-row">
+						<label>Quality:</label>
+						<select id="toxic-quality">
+							<option value="fast">Fast</option>
+							<option value="balanced" selected>Balanced</option>
+							<option value="advanced">Advanced</option>
+							<option value="premium">Premium</option>
+						</select>
+						<label style="margin-left:15px;">Sensitivity:</label>
+						<select id="toxic-sensitivity">
+							<option value="low">Low</option>
+							<option value="medium" selected>Medium</option>
+							<option value="high">High</option>
+						</select>
+					</div>
+					<div class="e2e-form-row">
+						<label>Examples:</label>
+						<div class="e2e-example-buttons" id="toxic-examples">
+							<span class="e2e-loading-inline">Loading...</span>
+						</div>
+					</div>
+					<div class="e2e-form-row">
+						<textarea id="toxic-content" placeholder="Enter content to check for toxicity..." style="flex:1;min-height:80px;"></textarea>
+					</div>
+					<div class="e2e-form-row">
+						<button type="button" class="button button-primary e2e-run-test" data-test="toxic">Check Toxicity</button>
+					</div>
+					<div class="e2e-result-box" id="result-toxic"></div>
+				</div>
+			</div>
+
+			<!-- Moderation Test History -->
+			<div class="e2e-history-section" style="margin-top: 30px;">
+				<h3>Moderation Test History
+					<button type="button" class="button button-small" id="refresh-moderation-history">Refresh</button>
+					<button type="button" class="button button-small e2e-clear-history" data-type="moderation" data-test-type="spam">Clear All</button>
+				</h3>
+				<div class="e2e-history-table-wrap">
+					<table class="e2e-history-table" id="spam-history-table">
+						<thead>
+							<tr>
+								<th>Date</th>
+								<th>Type</th>
+								<th>Content</th>
+								<th>Quality</th>
+								<th>Score</th>
+								<th>Result</th>
+								<th>Time</th>
+								<th>Credits</th>
+								<th>Actions</th>
+							</tr>
+						</thead>
+						<tbody id="spam-history-body">
+							<tr><td colspan="9" class="e2e-loading">Loading history...</td></tr>
+						</tbody>
+					</table>
+				</div>
 			</div>
 		</div>
 
@@ -454,22 +553,187 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 		<!-- RAG Tab -->
 		<div class="e2e-tab-content" data-tab="rag">
 			<div class="e2e-panel">
-				<h2>RAG Status</h2>
+				<h2>RAG Indexing Status</h2>
+				<p style="color:#666;margin-bottom:15px;">RAG (Retrieval-Augmented Generation) indexes your forum content for AI-powered semantic search, suggestions, and spam detection context.</p>
 				<div class="e2e-form-row">
-					<button type="button" class="button button-primary e2e-run-test" data-test="rag_status">Get RAG Status</button>
+					<button type="button" class="button button-primary e2e-run-test" data-test="rag_status">Refresh Status</button>
 				</div>
-				<div class="e2e-result-box" id="result-rag"></div>
+
+				<!-- RAG Status Display -->
+				<div id="rag-status-display" style="display:none;">
+					<div class="e2e-info-grid" style="margin-top:20px;">
+						<div class="e2e-info-item">
+							<span class="label">Indexing Status:</span>
+							<span class="value" id="rag-is-indexing">-</span>
+						</div>
+						<div class="e2e-info-item">
+							<span class="label">Total Indexed:</span>
+							<span class="value" id="rag-total-indexed">-</span>
+						</div>
+						<div class="e2e-info-item">
+							<span class="label">Last Indexed:</span>
+							<span class="value" id="rag-last-indexed">-</span>
+						</div>
+						<div class="e2e-info-item">
+							<span class="label">Progress:</span>
+							<span class="value" id="rag-progress">-</span>
+						</div>
+					</div>
+
+					<!-- Queue Info -->
+					<h3 style="margin-top:20px;font-size:14px;">Queue Status</h3>
+					<div class="e2e-info-grid">
+						<div class="e2e-info-item">
+							<span class="label">Pending:</span>
+							<span class="value" id="rag-queue-pending">-</span>
+						</div>
+						<div class="e2e-info-item">
+							<span class="label">Processing:</span>
+							<span class="value" id="rag-queue-processing">-</span>
+						</div>
+						<div class="e2e-info-item">
+							<span class="label">Failed:</span>
+							<span class="value" id="rag-queue-failed">-</span>
+						</div>
+					</div>
+
+					<!-- Media Progress -->
+					<div id="rag-media-section" style="display:none;">
+						<h3 style="margin-top:20px;font-size:14px;">Media Processing (Images & Documents)</h3>
+						<div class="e2e-info-grid">
+							<div class="e2e-info-item">
+								<span class="label">Total Media:</span>
+								<span class="value" id="rag-media-total">-</span>
+							</div>
+							<div class="e2e-info-item">
+								<span class="label">Completed:</span>
+								<span class="value" id="rag-media-done">-</span>
+							</div>
+							<div class="e2e-info-item">
+								<span class="label">Failed:</span>
+								<span class="value" id="rag-media-failed">-</span>
+							</div>
+							<div class="e2e-info-item">
+								<span class="label">Skipped:</span>
+								<span class="value" id="rag-media-skipped">-</span>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Raw JSON (collapsible) -->
+				<details style="margin-top:20px;">
+					<summary style="cursor:pointer;color:#2271b1;">Show Raw JSON Response</summary>
+					<div class="e2e-result-box" id="result-rag" style="margin-top:10px;"></div>
+				</details>
 			</div>
 		</div>
 
 		<!-- Analytics Tab -->
 		<div class="e2e-tab-content" data-tab="analytics">
-			<div class="e2e-panel">
-				<h2>Analytics</h2>
-				<div class="e2e-form-row">
-					<button type="button" class="button button-primary e2e-run-test" data-test="analytics">Get Analytics</button>
+			<div class="e2e-panel e2e-info-panel">
+				<h2>AI-Powered Analytics Insights</h2>
+				<p style="color:#666;">Analyze your forum content with AI to get actionable insights. Each analysis uses forum posts/topics data.</p>
+			</div>
+
+			<!-- Sentiment Analysis -->
+			<div class="e2e-analytics-section">
+				<div class="e2e-analytics-form">
+					<h3>Sentiment Analysis <span class="e2e-credits-badge">2 credits</span></h3>
+					<p>Analyze community sentiment across 7 emotions: joy, trust, anticipation, surprise, fear, sadness, anger.</p>
+					<div class="e2e-form-row">
+						<label>Posts to analyze:</label>
+						<select id="analytics-sentiment-limit">
+							<option value="50" selected>Last 50 posts</option>
+							<option value="100">Last 100 posts</option>
+							<option value="200">Last 200 posts</option>
+						</select>
+						<button type="button" class="button button-primary e2e-run-analytics" data-type="sentiment">Analyze Sentiment</button>
+					</div>
 				</div>
-				<div class="e2e-result-box" id="result-analytics"></div>
+				<div class="e2e-analytics-result">
+					<div class="e2e-result-box" id="result-analytics-sentiment"></div>
+				</div>
+			</div>
+
+			<!-- Trending Topics -->
+			<div class="e2e-analytics-section">
+				<div class="e2e-analytics-form">
+					<h3>Trending Topics <span class="e2e-credits-badge">1 credit</span></h3>
+					<p>Detect what topics and themes are currently trending in your community.</p>
+					<div class="e2e-form-row">
+						<label>Posts to analyze:</label>
+						<select id="analytics-trending-limit">
+							<option value="50" selected>Last 50 posts</option>
+							<option value="100">Last 100 posts</option>
+							<option value="200">Last 200 posts</option>
+						</select>
+						<button type="button" class="button button-primary e2e-run-analytics" data-type="trending">Find Trending</button>
+					</div>
+				</div>
+				<div class="e2e-analytics-result">
+					<div class="e2e-result-box" id="result-analytics-trending"></div>
+				</div>
+			</div>
+
+			<!-- Growth Recommendations -->
+			<div class="e2e-analytics-section">
+				<div class="e2e-analytics-form">
+					<h3>Growth Recommendations <span class="e2e-credits-badge">3 credits</span></h3>
+					<p>Get AI-powered recommendations for growing your community engagement.</p>
+					<div class="e2e-form-row">
+						<label>Posts to analyze:</label>
+						<select id="analytics-recommendations-limit">
+							<option value="50" selected>Last 50 posts</option>
+							<option value="100">Last 100 posts</option>
+							<option value="200">Last 200 posts</option>
+						</select>
+						<button type="button" class="button button-primary e2e-run-analytics" data-type="recommendations">Get Recommendations</button>
+					</div>
+				</div>
+				<div class="e2e-analytics-result">
+					<div class="e2e-result-box" id="result-analytics-recommendations"></div>
+				</div>
+			</div>
+
+			<!-- Deep Analysis -->
+			<div class="e2e-analytics-section">
+				<div class="e2e-analytics-form">
+					<h3>Deep Analysis <span class="e2e-credits-badge">5 credits</span></h3>
+					<p>Comprehensive community deep dive with detailed behavioral patterns and insights.</p>
+					<div class="e2e-form-row">
+						<label>Posts to analyze:</label>
+						<select id="analytics-deep_analysis-limit">
+							<option value="50" selected>Last 50 posts</option>
+							<option value="100">Last 100 posts</option>
+							<option value="200">Last 200 posts</option>
+						</select>
+						<button type="button" class="button button-primary e2e-run-analytics" data-type="deep_analysis">Run Deep Analysis</button>
+					</div>
+				</div>
+				<div class="e2e-analytics-result">
+					<div class="e2e-result-box" id="result-analytics-deep_analysis"></div>
+				</div>
+			</div>
+
+			<!-- Sentiment Trend -->
+			<div class="e2e-analytics-section">
+				<div class="e2e-analytics-form">
+					<h3>Sentiment Trend <span class="e2e-credits-badge">4 credits</span></h3>
+					<p>Track how community sentiment has changed over time periods.</p>
+					<div class="e2e-form-row">
+						<label>Posts to analyze:</label>
+						<select id="analytics-sentiment_trend-limit">
+							<option value="50" selected>Last 50 posts</option>
+							<option value="100">Last 100 posts</option>
+							<option value="200">Last 200 posts</option>
+						</select>
+						<button type="button" class="button button-primary e2e-run-analytics" data-type="sentiment_trend">Analyze Trend</button>
+					</div>
+				</div>
+				<div class="e2e-analytics-result">
+					<div class="e2e-result-box" id="result-analytics-sentiment_trend"></div>
+				</div>
 			</div>
 		</div>
 	</div>

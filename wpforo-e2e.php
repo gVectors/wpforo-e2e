@@ -22,6 +22,7 @@ class WPForo_E2E_Tester {
 	private static $instance = null;
 	private $table_name;
 	private $suggestion_table;
+	private $moderation_table;
 
 	public static function instance() {
 		if ( self::$instance === null ) {
@@ -34,6 +35,7 @@ class WPForo_E2E_Tester {
 		global $wpdb;
 		$this->table_name = $wpdb->prefix . 'wpforo_ai_e2e_search_tests';
 		$this->suggestion_table = $wpdb->prefix . 'wpforo_ai_e2e_suggestion_tests';
+		$this->moderation_table = $wpdb->prefix . 'wpforo_ai_e2e_moderation_tests';
 
 		add_action( 'admin_menu', [ $this, 'add_admin_menu' ] );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_admin_assets' ] );
@@ -49,10 +51,14 @@ class WPForo_E2E_Tester {
 		add_action( 'wp_ajax_wpforo_e2e_get_suggestion_history', [ $this, 'ajax_get_suggestion_history' ] );
 		add_action( 'wp_ajax_wpforo_e2e_clear_suggestion_history', [ $this, 'ajax_clear_suggestion_history' ] );
 		add_action( 'wp_ajax_wpforo_e2e_delete_suggestion_test', [ $this, 'ajax_delete_suggestion_test' ] );
+		add_action( 'wp_ajax_wpforo_e2e_get_moderation_history', [ $this, 'ajax_get_moderation_history' ] );
+		add_action( 'wp_ajax_wpforo_e2e_clear_moderation_history', [ $this, 'ajax_clear_moderation_history' ] );
+		add_action( 'wp_ajax_wpforo_e2e_delete_moderation_test', [ $this, 'ajax_delete_moderation_test' ] );
 
 		// Create tables on init if not exists
 		$this->maybe_create_table();
 		$this->maybe_create_suggestion_table();
+		$this->maybe_create_moderation_table();
 	}
 
 	private function maybe_create_table() {
@@ -123,6 +129,45 @@ class WPForo_E2E_Tester {
 			created_at DATETIME NOT NULL,
 			PRIMARY KEY (id),
 			KEY query_idx (query(191)),
+			KEY created_at_idx (created_at)
+		) $charset_collate;";
+
+		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+		dbDelta( $sql );
+	}
+
+	private function maybe_create_moderation_table() {
+		global $wpdb;
+
+		$table = $this->moderation_table;
+		if ( $wpdb->get_var( "SHOW TABLES LIKE '$table'" ) !== $table ) {
+			$this->create_moderation_table();
+		}
+	}
+
+	public function create_moderation_table() {
+		global $wpdb;
+
+		$charset_collate = $wpdb->get_charset_collate();
+		$table = $this->moderation_table;
+
+		$sql = "CREATE TABLE $table (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			test_type VARCHAR(20) NOT NULL DEFAULT 'spam',
+			content TEXT NOT NULL,
+			quality VARCHAR(20) NOT NULL DEFAULT 'balanced',
+			spam_score INT DEFAULT NULL,
+			is_spam TINYINT(1) DEFAULT NULL,
+			confidence DECIMAL(5,4) DEFAULT NULL,
+			indicators TEXT,
+			analysis_summary TEXT,
+			query_time_ms INT NOT NULL DEFAULT 0,
+			credits_used INT NOT NULL DEFAULT 0,
+			settings_json TEXT,
+			results_json LONGTEXT,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY test_type_idx (test_type),
 			KEY created_at_idx (created_at)
 		) $charset_collate;";
 
@@ -864,10 +909,114 @@ class WPForo_E2E_Tester {
 
 	private function get_moderate_info() {
 		$ai_settings = WPF()->settings->ai ?? [];
+
+		// Check if AI client is connected
+		$ai_client = WPF()->ai_client;
+		$is_connected = $ai_client && $ai_client->is_connected();
+
+		// Get subscription info for credits
+		$credits_info = [];
+		if ( $is_connected ) {
+			$status = $ai_client->get_tenant_status();
+			if ( ! is_wp_error( $status ) && isset( $status['subscription'] ) ) {
+				$credits_info = [
+					'remaining' => $status['subscription']['credits_remaining'] ?? 0,
+					'used'      => $status['subscription']['credits_used'] ?? 0,
+				];
+			}
+		}
+
+		// Get forum context for spam detection
+		$board_id = WPF()->board->get_current( 'boardid' );
+		$board = WPF()->board->get_board( $board_id );
+		$forum_context = '';
+		if ( $board ) {
+			$forum_context = 'Forum: ' . ( $board['title'] ?? 'Community' );
+			if ( ! empty( $board['description'] ) ) {
+				$forum_context .= ' - ' . $board['description'];
+			}
+		}
+
+		// Quality options
+		$quality_options = [
+			'fast'     => [ 'label' => 'Fast', 'credits' => 1 ],
+			'balanced' => [ 'label' => 'Balanced', 'credits' => 2 ],
+			'advanced' => [ 'label' => 'Advanced', 'credits' => 3 ],
+			'premium'  => [ 'label' => 'Premium', 'credits' => 4 ],
+		];
+
+		// Spam example content for testing
+		$spam_examples = [
+			[
+				'label' => 'Promotional Spam',
+				'content' => "AMAZING DEAL!!! 🔥🔥🔥 Visit www.best-cheap-pills.xyz for 90% OFF all products! FREE shipping worldwide! Limited time offer - BUY NOW before it's gone! Click here >>> bit.ly/spam123 <<< Don't miss out! 💰💰💰 Best prices guaranteed! Contact us at spam@fake-email.ru for wholesale discounts!",
+			],
+			[
+				'label' => 'Crypto Scam',
+				'content' => "Hey everyone! I just made \$50,000 in ONE WEEK using this secret crypto trading bot! 🚀 My friend shared this exclusive link with me and now I'm sharing with you! Join now at telegram.me/crypto_scam_bot - they guarantee 500% returns! Send 0.1 BTC to bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh and get 1 BTC back! This is NOT a scam, my cousin verified it!",
+			],
+			[
+				'label' => 'SEO Link Spam',
+				'content' => "Great article! Very helpful information. By the way, if anyone needs help with similar topics, check out my website [url=https://spammy-seo-site.com]best forum software[/url] and [url=https://another-spam.net]cheap web hosting[/url]. We also offer [url=https://link-farm.biz]SEO services[/url] and [url=https://fake-reviews.com]reputation management[/url]. Visit us today! Keywords: forum, community, discussion, board, PHP, WordPress, plugin",
+			],
+		];
+
+		// Toxicity example content for testing (different levels)
+		$toxic_examples = [
+			[
+				'label' => 'Mild Frustration',
+				'content' => "This is so annoying! I've been waiting for hours and nobody is helping me. The support here is absolutely useless. I'm starting to regret buying this product. Can someone please just answer my simple question?",
+			],
+			[
+				'label' => 'Aggressive Insults',
+				'content' => "Are you people complete idiots? This is the dumbest thing I've ever seen! The developers must be brain-dead morons to release such garbage. Anyone who defends this trash is a clueless fool. What a joke!",
+			],
+			[
+				'label' => 'Hate Speech',
+				'content' => "All [group] are disgusting subhumans who should be exterminated. They're ruining everything and don't deserve to exist. If you're one of them, get out of here before we make you. Death to all [group]!",
+			],
+		];
+
 		return [
 			'settings' => [
-				'moderation_enabled' => $ai_settings['content_moderation'] ?? false,
-				'auto_moderate'      => $ai_settings['auto_moderate'] ?? false,
+				'spam' => [
+					'enabled'            => $ai_settings['moderation_spam'] ?? false,
+					'quality'            => $ai_settings['moderation_spam_quality'] ?? 'balanced',
+					'use_context'        => $ai_settings['moderation_spam_use_context'] ?? true,
+					'min_indexed'        => $ai_settings['moderation_spam_min_indexed'] ?? 100,
+					'action_detected'    => $ai_settings['moderation_spam_action_detected'] ?? 'unapprove_ban',
+					'action_suspected'   => $ai_settings['moderation_spam_action_suspected'] ?? 'unapprove',
+					'exempt_minposts'    => $ai_settings['moderation_spam_exempt_minposts'] ?? 10,
+				],
+				'toxicity' => [
+					'enabled'     => $ai_settings['moderation_toxicity'] ?? false,
+					'sensitivity' => $ai_settings['moderation_toxicity_sensitivity'] ?? 'medium',
+					'action'      => $ai_settings['moderation_toxicity_action'] ?? 'unapprove',
+				],
+				'policy' => [
+					'enabled' => $ai_settings['moderation_policy'] ?? false,
+				],
+			],
+			'options' => [
+				'quality' => $quality_options,
+			],
+			'examples' => [
+				'spam'  => $spam_examples,
+				'toxic' => $toxic_examples,
+			],
+			'context' => [
+				'forum_description' => $forum_context,
+				'board_id'          => $board_id,
+			],
+			'connection' => [
+				'connected' => $is_connected,
+				'credits'   => $credits_info,
+			],
+			'api' => [
+				'spam_endpoint'    => '/v1/moderation/spam/detect',
+				'unified_endpoint' => '/v1/moderation/analyze',
+				'method'           => 'POST',
+				'cost'             => '1-4 credits based on quality',
 			],
 		];
 	}
@@ -1121,6 +1270,8 @@ class WPForo_E2E_Tester {
 					break;
 
 				case 'moderate':
+				case 'spam':
+				case 'toxic':
 					$result = $this->test_moderate( $params );
 					break;
 
@@ -1134,6 +1285,10 @@ class WPForo_E2E_Tester {
 
 				case 'analytics':
 					$result = $this->test_analytics();
+					break;
+
+				case 'analytics_insight':
+					$result = $this->test_analytics_insight( $params );
 					break;
 
 				default:
@@ -1510,6 +1665,74 @@ class WPForo_E2E_Tester {
 
 		if ( $id > 0 ) {
 			$wpdb->delete( $this->suggestion_table, [ 'id' => $id ], [ '%d' ] );
+		}
+
+		wp_send_json_success( [ 'message' => 'Deleted' ] );
+	}
+
+	public function ajax_get_moderation_history() {
+		$this->verify_request();
+
+		global $wpdb;
+		$limit = intval( $_POST['limit'] ?? 50 );
+		$test_type = sanitize_text_field( $_POST['test_type'] ?? '' );
+
+		$where = '';
+		if ( $test_type ) {
+			$where = $wpdb->prepare( " WHERE test_type = %s", $test_type );
+		}
+
+		$results = $wpdb->get_results( $wpdb->prepare(
+			"SELECT * FROM {$this->moderation_table} {$where} ORDER BY created_at DESC LIMIT %d",
+			$limit
+		) );
+
+		$history = [];
+		foreach ( $results as $row ) {
+			$history[] = [
+				'id'               => $row->id,
+				'test_type'        => $row->test_type,
+				'content'          => stripslashes( $row->content ),
+				'quality'          => $row->quality,
+				'spam_score'       => $row->spam_score,
+				'is_spam'          => (bool) $row->is_spam,
+				'confidence'       => $row->confidence,
+				'indicators'       => json_decode( $row->indicators, true ),
+				'analysis_summary' => stripslashes( $row->analysis_summary ),
+				'query_time_ms'    => $row->query_time_ms,
+				'credits_used'     => $row->credits_used,
+				'settings'         => json_decode( $row->settings_json, true ),
+				'results'          => json_decode( $row->results_json, true ),
+				'created_at'       => $row->created_at,
+			];
+		}
+
+		wp_send_json_success( $history );
+	}
+
+	public function ajax_clear_moderation_history() {
+		$this->verify_request();
+
+		global $wpdb;
+		$test_type = sanitize_text_field( $_POST['test_type'] ?? '' );
+
+		if ( $test_type ) {
+			$wpdb->delete( $this->moderation_table, [ 'test_type' => $test_type ], [ '%s' ] );
+		} else {
+			$wpdb->query( "TRUNCATE TABLE {$this->moderation_table}" );
+		}
+
+		wp_send_json_success( [ 'message' => 'Moderation history cleared' ] );
+	}
+
+	public function ajax_delete_moderation_test() {
+		$this->verify_request();
+
+		global $wpdb;
+		$id = intval( $_POST['id'] ?? 0 );
+
+		if ( $id > 0 ) {
+			$wpdb->delete( $this->moderation_table, [ 'id' => $id ], [ '%d' ] );
 		}
 
 		wp_send_json_success( [ 'message' => 'Deleted' ] );
@@ -2056,18 +2279,178 @@ class WPForo_E2E_Tester {
 	}
 
 	private function test_moderate( $params ) {
-		$content = sanitize_textarea_field( $params['content'] ?? 'This is a test message for moderation check.' );
+		global $wpdb;
 
-		$response = $this->call_ai_endpoint( '/moderation/check', [
-			'content' => $content,
-			'type'    => 'post',
-		] );
+		$test_type = sanitize_text_field( $params['test_type'] ?? 'spam' );
+		$content = wp_kses_post( $params['content'] ?? '' );
+		$quality = sanitize_text_field( $params['quality'] ?? '' );
+		$sensitivity = sanitize_text_field( $params['sensitivity'] ?? 'medium' );
 
-		return [
-			'success' => ! is_wp_error( $response ),
-			'content' => wp_trim_words( $content, 20 ),
-			'result'  => is_wp_error( $response ) ? $response->get_error_message() : $response,
+		if ( empty( $content ) ) {
+			return [
+				'success' => false,
+				'error'   => 'Content is required',
+			];
+		}
+
+		// Use settings defaults if not provided
+		$ai_settings = WPF()->settings->ai ?? [];
+		if ( empty( $quality ) ) {
+			$quality = $ai_settings['moderation_spam_quality'] ?? 'balanced';
+		}
+
+		// Build forum context like wpForo does
+		$board_id = WPF()->board->get_current( 'boardid' );
+		$board = WPF()->board->get_board( $board_id );
+		$site_name = get_bloginfo( 'name' );
+		$site_description = get_bloginfo( 'description' );
+
+		$forum_description = '';
+		$context_parts = [];
+
+		if ( $site_name || $site_description ) {
+			$site_context = 'Website: ' . ( $site_name ?: 'Unknown' );
+			if ( $site_description ) {
+				$site_context .= ' - ' . $site_description;
+			}
+			$context_parts[] = $site_context;
+		}
+
+		if ( $board ) {
+			$board_context = 'Forum: ' . ( $board['title'] ?? 'Community' );
+			if ( ! empty( $board['description'] ) ) {
+				$board_context .= ' - ' . $board['description'];
+			}
+			$context_parts[] = $board_context;
+		}
+
+		$forum_description = implode( '. ', $context_parts );
+
+		// Build base request data (same structure for all moderation types)
+		$request_data = [
+			'content_type' => 'post',
+			'title'        => 'E2E Test Post',
+			'body'         => $content,
+			'quality'      => $quality,
+			'forum'        => [
+				'id'          => $board_id,
+				'title'       => $board['title'] ?? 'General',
+				'description' => $forum_description,
+				'slug'        => $board['slug'] ?? 'general',
+			],
+			'user'         => [
+				'userid'            => get_current_user_id(),
+				'display_name'      => wp_get_current_user()->display_name ?? 'Test User',
+				'post_count'        => 0,
+				'registration_days' => 0,
+				'is_banned'         => false,
+				'usergroup_id'      => 4,
+			],
 		];
+
+		// Determine endpoint based on test type
+		if ( $test_type === 'toxic' ) {
+			// Use unified /moderation/analyze endpoint with toxicity enabled
+			$request_data['spam'] = [ 'enabled' => false ];
+			$request_data['toxicity'] = [
+				'enabled'     => true,
+				'sensitivity' => $sensitivity,
+			];
+			$request_data['compliance'] = [ 'enabled' => false ];
+			$endpoint = '/moderation/analyze';
+		} else {
+			// Spam detection - use spam-only endpoint
+			$request_data['use_forum_context']  = $ai_settings['moderation_spam_use_context'] ?? true;
+			$request_data['min_indexed_topics'] = $ai_settings['moderation_spam_min_indexed'] ?? 100;
+			$request_data['board_id']           = $board_id;
+			$endpoint = '/moderation/spam/detect';
+		}
+
+		$start_time = microtime( true );
+		$response = $this->call_ai_endpoint( $endpoint, $request_data );
+		$query_time_ms = round( ( microtime( true ) - $start_time ) * 1000 );
+
+		$is_success = ! is_wp_error( $response );
+
+		// Extract result data based on test type
+		$spam_score = null;
+		$is_spam = null;
+		$confidence = null;
+		$indicators = [];
+		$analysis_summary = '';
+		$credits_used = 0;
+
+		if ( $is_success && is_array( $response ) ) {
+			if ( $test_type === 'toxic' ) {
+				// Unified endpoint returns nested toxicity object
+				$toxicity = $response['toxicity'] ?? [];
+				$spam_score = $toxicity['score'] ?? null;
+				$is_spam = $toxicity['is_toxic'] ?? null;
+				$indicators = $toxicity['categories'] ?? [];
+				$confidence = $toxicity['confidence'] ?? null;
+				$analysis_summary = $toxicity['summary'] ?? '';
+			} else {
+				$spam_score = $response['spam_score'] ?? null;
+				$is_spam = $response['is_spam'] ?? null;
+				$indicators = $response['indicators'] ?? [];
+				$confidence = $response['confidence'] ?? null;
+				$analysis_summary = $response['analysis_summary'] ?? '';
+			}
+			$credits_used = $response['credits_used'] ?? 0;
+		}
+
+		// Save to history table
+		$settings = [
+			'quality'     => $quality,
+			'test_type'   => $test_type,
+			'sensitivity' => $sensitivity,
+		];
+
+		$wpdb->insert(
+			$this->moderation_table,
+			[
+				'test_type'        => $test_type,
+				'content'          => wp_trim_words( $content, 50 ),
+				'quality'          => $quality,
+				'spam_score'       => $spam_score,
+				'is_spam'          => $is_spam ? 1 : 0,
+				'confidence'       => $confidence,
+				'indicators'       => json_encode( $indicators ),
+				'analysis_summary' => $analysis_summary,
+				'query_time_ms'    => $query_time_ms,
+				'credits_used'     => $credits_used,
+				'settings_json'    => json_encode( $settings ),
+				'results_json'     => json_encode( $is_success ? $response : [ 'error' => $response->get_error_message() ] ),
+				'created_at'       => current_time( 'mysql' ),
+			],
+			[ '%s', '%s', '%s', '%d', '%d', '%f', '%s', '%s', '%d', '%d', '%s', '%s', '%s' ]
+		);
+
+		$result = [
+			'success'          => $is_success,
+			'test_type'        => $test_type,
+			'content_preview'  => wp_trim_words( $content, 20 ),
+			'quality'          => $quality,
+			'confidence'       => $confidence,
+			'analysis_summary' => $analysis_summary,
+			'query_time_ms'    => $query_time_ms,
+			'credits_used'     => $credits_used,
+			'request'          => $request_data,
+			'response'         => $is_success ? $response : [ 'error' => $response->get_error_message() ],
+		];
+
+		if ( $test_type === 'toxic' ) {
+			$result['toxicity_score'] = $spam_score;
+			$result['is_toxic'] = $is_spam;
+			$result['categories'] = $indicators;
+			$result['sensitivity'] = $sensitivity;
+		} else {
+			$result['spam_score'] = $spam_score;
+			$result['is_spam'] = $is_spam;
+			$result['indicators'] = $indicators;
+		}
+
+		return $result;
 	}
 
 	private function test_chat( $params ) {
@@ -2104,6 +2487,145 @@ class WPForo_E2E_Tester {
 		];
 	}
 
+	private function test_analytics_insight( $params ) {
+		global $wpdb;
+
+		$insight_type = sanitize_text_field( $params['insight_type'] ?? 'sentiment' );
+		$limit = intval( $params['limit'] ?? 50 );
+
+		$posts_table = $wpdb->prefix . 'wpforo_posts';
+		$topics_table = $wpdb->prefix . 'wpforo_topics';
+		$members_table = $wpdb->prefix . 'wpforo_profiles';
+
+		// Build content based on insight type - each type expects different format
+		$content = [];
+
+		if ( $insight_type === 'sentiment' ) {
+			// sentiment: List of posts with 'text' field
+			$posts = $wpdb->get_results( $wpdb->prepare(
+				"SELECT p.body FROM {$posts_table} p WHERE p.status = 0 ORDER BY p.created DESC LIMIT %d",
+				$limit
+			) );
+			foreach ( $posts as $post ) {
+				$content[] = [ 'text' => wp_strip_all_tags( $post->body ) ];
+			}
+
+		} elseif ( $insight_type === 'trending' ) {
+			// trending: List of topics with title, posts, views
+			$topics = $wpdb->get_results( $wpdb->prepare(
+				"SELECT t.title, t.posts, t.views FROM {$topics_table} t WHERE t.status = 0 ORDER BY t.created DESC LIMIT %d",
+				$limit
+			) );
+			foreach ( $topics as $topic ) {
+				$content[] = [
+					'title' => $topic->title,
+					'posts' => (int) $topic->posts,
+					'views' => (int) $topic->views,
+				];
+			}
+
+		} elseif ( $insight_type === 'recommendations' ) {
+			// recommendations: Dict with 'stats' and 'recent_topics'
+			$stats = [
+				'total_topics'      => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$topics_table} WHERE status = 0" ),
+				'total_posts'       => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$posts_table} WHERE status = 0" ),
+				'unanswered_topics' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$topics_table} WHERE status = 0 AND posts = 1" ),
+				'active_users_week' => (int) $wpdb->get_var( "SELECT COUNT(DISTINCT userid) FROM {$posts_table} WHERE created > DATE_SUB(NOW(), INTERVAL 7 DAY)" ),
+				'avg_response_hours'=> 'unknown',
+			];
+			$recent_topics = $wpdb->get_col( $wpdb->prepare(
+				"SELECT title FROM {$topics_table} WHERE status = 0 ORDER BY created DESC LIMIT %d",
+				$limit
+			) );
+			$content = [
+				'stats'         => $stats,
+				'recent_topics' => $recent_topics,
+			];
+
+		} elseif ( $insight_type === 'deep_analysis' ) {
+			// deep_analysis: Dict with posts, user_stats, content_metrics, reply_stats
+			$posts = $wpdb->get_results( $wpdb->prepare(
+				"SELECT p.body, p.created as date, p.userid, t.title as topic
+				 FROM {$posts_table} p
+				 LEFT JOIN {$topics_table} t ON p.topicid = t.topicid
+				 WHERE p.status = 0 ORDER BY p.created DESC LIMIT %d",
+				$limit
+			) );
+			$posts_formatted = [];
+			foreach ( $posts as $post ) {
+				$posts_formatted[] = [
+					'text'     => wp_strip_all_tags( $post->body ),
+					'topic'    => $post->topic ?? '',
+					'username' => 'User ' . $post->userid,
+					'date'     => $post->date,
+				];
+			}
+			$user_stats = $wpdb->get_results(
+				"SELECT userid, posts as post_count FROM {$members_table} ORDER BY posts DESC LIMIT 20"
+			);
+			$content_metrics = [
+				'avg_post_length'  => (int) $wpdb->get_var( "SELECT AVG(LENGTH(body)) FROM {$posts_table} WHERE status = 0" ),
+				'avg_topic_length' => (int) $wpdb->get_var( "SELECT AVG(LENGTH(body)) FROM {$posts_table} WHERE status = 0 AND is_first_post = 1" ),
+			];
+			$reply_stats = [
+				'total_posts'   => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$posts_table} WHERE status = 0" ),
+				'total_replies' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$posts_table} WHERE status = 0 AND is_first_post = 0" ),
+				'unique_users'  => (int) $wpdb->get_var( "SELECT COUNT(DISTINCT userid) FROM {$posts_table} WHERE status = 0" ),
+			];
+			$content = [
+				'posts'           => $posts_formatted,
+				'user_stats'      => $user_stats,
+				'content_metrics' => $content_metrics,
+				'reply_stats'     => $reply_stats,
+			];
+
+		} elseif ( $insight_type === 'sentiment_trend' ) {
+			// sentiment_trend: List with 'text', 'timestamp', 'author'
+			$posts = $wpdb->get_results( $wpdb->prepare(
+				"SELECT p.body, p.created, p.userid
+				 FROM {$posts_table} p
+				 WHERE p.status = 0 ORDER BY p.created DESC LIMIT %d",
+				$limit
+			) );
+			foreach ( $posts as $post ) {
+				$content[] = [
+					'text'      => wp_strip_all_tags( $post->body ),
+					'timestamp' => $post->created,
+					'author'    => 'User ' . $post->userid,
+				];
+			}
+		}
+
+		if ( empty( $content ) ) {
+			return [
+				'success' => false,
+				'error'   => 'No content found to analyze',
+			];
+		}
+
+		$request_data = [
+			'insight_type' => $insight_type,
+			'content'      => $content,
+		];
+
+		$start_time = microtime( true );
+		$response = $this->call_ai_endpoint( '/analytics/insights', $request_data );
+		$query_time_ms = round( ( microtime( true ) - $start_time ) * 1000 );
+
+		$is_success = ! is_wp_error( $response );
+
+		$items_count = is_array( $content ) ? ( isset( $content[0] ) ? count( $content ) : 1 ) : 0;
+
+		return [
+			'success'       => $is_success,
+			'insight_type'  => $insight_type,
+			'items_count'   => $items_count,
+			'query_time_ms' => $query_time_ms,
+			'credits_used'  => $is_success ? ( $response['credits_used'] ?? 0 ) : 0,
+			'result'        => $is_success ? $response : [ 'error' => $response->get_error_message() ],
+		];
+	}
+
 	private function call_ai_endpoint( $endpoint, $data = [], $method = 'POST' ) {
 		$api_key = WPF()->ai_client->get_stored_api_key();
 		$base_url = defined( 'WPFORO_AI_API' ) ? WPFORO_AI_API : 'https://api.gvectors.com/v1';
@@ -2112,7 +2634,7 @@ class WPForo_E2E_Tester {
 
 		$args = [
 			'method'  => $method,
-			'timeout' => 30,
+			'timeout' => 60,
 			'headers' => [
 				'Authorization' => 'Bearer ' . $api_key,
 				'Content-Type'  => 'application/json',
